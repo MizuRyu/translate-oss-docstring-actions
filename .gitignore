@@ -12,6 +12,7 @@ wheels/
 # environment variables
 .env
 
+archive/*
 test_data/*
 translated_sources/*
 

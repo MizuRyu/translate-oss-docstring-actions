@@ -1,74 +1,89 @@
-# 251022-libcst
+# comment-translator (新構成)
 
-libcst を用いて Python ファイルから docstring・コメントなどを抽出し、JSONL で翻訳ワークフローに渡すためのツールです。抽出結果はバッチ単位で LLM に送信して翻訳します。
+libcst を利用して Python ファイルから docstring / コメント / ログメッセージを抽出し、LLM で翻訳した後に元ソースへ反映するツールです。抽出・翻訳・反映の 3 フェーズを CLI 1 本で扱えます。
 
-## 前提条件
+## 必要要件
+
 - Python 3.12 以上
-- [uv](https://github.com/astral-sh/uv) がインストール済み
-- プロジェクトルートで作業すること（`/Users/ryumizu/dev/sandbox/251022_libcst`）
+- [uv](https://github.com/astral-sh/uv)
+- Azure 翻訳を使用する場合は Azure AI Inference にアクセス可能なトークン（`AZURE_INFERENCE_TOKEN` または `GITHUB_TOKEN`）
 
-※ プロジェクト直下の `uv.toml` で `cache-dir = ".uv-cache"` を指定しているため、`UV_CACHE_DIR=...` を付ける必要はありません。
+プロジェクト直下の `uv.toml` で uv のキャッシュ先をローカル (`.uv-cache/`) に固定しています。環境の権限が限定されている場合でも動作させるため、削除しないでください。
 
-## 依存関係の同期
-初回のみ以下を実行すると依存がインストールされます。
+## 使い方
+
+1. 依存関係の同期（初回のみ）
+
+   ```bash
+   uv sync
+   ```
+
+2. 抽出（例: `test_data` 以下を対象）
+
+   ```bash
+   uv run python main.py extract test_data \
+     --output extracted.jsonl \
+     --include-log-messages \
+     --verbose \
+     --log-level INFO
+   ```
+
+   - `--include-log-messages`：`print` や `logger.*` を抽出対象に含めます（旧 `--include-runtime-messages`）。
+   - `--verbose`：抽出時の追加ログを有効化します（旧 `--include-debug-logs`）。
+   - `--exclude` で glob 指定によりファイルやフォルダを除外可能です。
+
+3. 翻訳
+
+   ```bash
+   uv run python main.py translate extracted.jsonl \
+     --output translated.jsonl \
+     --failed-output unprocessed.jsonl \
+     --translator-kind dummy \
+     --batch-size 5 \
+     --log-level INFO
+   ```
+
+   - 実際に Azure AI Inference へ送る場合は `--translator-kind azure` を指定し、環境変数 `AZURE_INFERENCE_TOKEN`（または `GITHUB_TOKEN`）をセットしてください。必要に応じて `AZURE_INFERENCE_ENDPOINT` / `AZURE_INFERENCE_MODEL` / `AZURE_INFERENCE_API_VERSION` で上書きできます。
+   - 処理中はバッチごとにログが出力され、終了ログには合計リクエスト回数が表示されます。
+
+4. 反映
+
+   ```bash
+   uv run python main.py replace translated.jsonl \
+     --output-dir translated_sources \
+     --root test_data \
+     --mode indirect \
+     --log-level INFO
+   ```
+
+   - `--root` には元ソースのルートディレクトリを指定してください。生成ファイルは `translated_sources/<元パス>` の構造で出力されます。
+   - コメントは原文のブロック単位で置き換えられ、textwrap による折り返しが適用されます。
+   - docstring は元のインデント／末尾改行を再現したうえで置換します。
+   - `--mode direct` は未実装です。
+
+5. クリーンアップ（任意）
+
+   結果ファイルを再生成したい場合は、`extracted.jsonl` / `translated.jsonl` / `unprocessed.jsonl` / `translated_sources/` を削除してから再実行してください。
+
+## テスト
+
+mock 翻訳を使ったシナリオテストと、抽出／置換それぞれの単体テストを `unittest` ベースで用意しています。外部 API には接続しません。
 
 ```bash
-uv sync
+uv run python -m unittest \
+  tests.test_extract \
+  tests.test_translate \
+  tests.test_replace \
+  tests.test_pipeline
 ```
 
-## 抽出処理
-`test_data` 配下を解析し、抽出結果を JSONL で出力する例です。
+## ログ出力
 
-```bash
-uv run python main.py extract test_data \
-  --output extracted.jsonl \
-  --include-runtime-messages \
-  --include-debug-logs \
-  --log-level INFO
-```
+- `LOG_LEVEL` 環境変数、または各コマンドの `--log-level` オプションでログレベルを調整できます。
+- すべてのステージで実行時間や件数の統計を JSON 形式でログ出力します。
+- 翻訳ステージではバッチごとにログを出し、トータルの LLM リクエスト回数も表示します。
 
-- 抽出完了時のログに、対象ファイル数・抽出件数・総文字数・総トークン数・平均トークン数・処理時間が出力されます。
-- `--include-runtime-messages` を外すと print / logger メッセージ抽出を無効化できます。
-- `--include-debug-logs` は debug ログのみ追加で含めるオプションです（このフラグ単体でも自動で runtime メッセージ抽出が有効化されます）。
-- 連続する `#` コメントは1ブロックとして集約され、テキストは改行で結合した状態でJSONLに記録されます。
+## 既知の制限
 
-## 翻訳処理
-抽出済み JSONL を翻訳し、翻訳後 JSONL と未処理 JSONL を生成する例です。
-
-```bash
-uv run python main.py translate extracted.jsonl \
-  --output translated.jsonl \
-  --failed-output unprocessed.jsonl \
-  --log-level INFO \
-  --limit 10 \
-  --batch-size 10
-```
-
-- 処理開始時に対象件数・総トークン数・平均トークン数がログに記録されます。
-- 既定では Azure AI Inference を利用した翻訳リクエストを行います。以下の環境変数を設定してください。
-  - `AZURE_INFERENCE_ENDPOINT`（任意 / 省略時は `https://models.github.ai/inference`）
-  - `AZURE_INFERENCE_MODEL`（任意 / 省略時は `openai/gpt-4.1-mini`）
-  - `AZURE_INFERENCE_TOKEN` もしくは `GITHUB_TOKEN`（必須 / 認証トークン）
-- `.env` に上記を記載しておけば `python-dotenv` により自動で読み込まれます。
-- 少件数で試す場合は `--limit 3 --batch-size 3` のように組み合わせると 3 件ずつ LLM に送信します。
-- モックで確認したい場合は `--translator-kind dummy` を指定すると `"<原文> (mock)"` が出力されます。
-- 失敗したレコードは `unprocessed.jsonl` に原文とエラー内容付きで 1 行ずつ保存されます。
-
-## 翻訳結果の適用（間接置換）
-翻訳後の JSONL を使って docstring を置換したファイルを生成します。元ファイルは書き換えず、指定ディレクトリに生成します。
-
-```bash
-uv run python main.py apply translated.jsonl \
-  --output-dir translated_sources \
-  --root . \
-  --mode indirect \
-  --log-level INFO
-```
-
-- `--root` は翻訳対象ファイルのルートディレクトリです。JSONL 内の `path` から相対パスを求めるために使用します。
-- `--mode direct` も指定できますが現在は未実装です（エラーになります）。
-- 生成ファイルは `translated_sources/<元ファイルのパス>` の構造で出力されます。
-
-## その他
-- 追加の CLI オプションは `uv run python main.py --help` または各サブコマンドの `--help` で確認できます。
-- 今後 GitHub Actions に載せる際は、上記コマンドをジョブ内でそのまま実行できます。
+- コメントの差し戻しは原文ブロックを文字列置換しているため、翻訳後に元のコメントブロックがソースコード上から完全に消えている場合は置換できず警告が表示されます。
+- `translate` の Azure モードは構造化出力 (`response_format=json_schema`) を利用します。利用するエンドポイントが `2024-08-01-preview` 以降の API バージョンに対応していることをご確認ください。

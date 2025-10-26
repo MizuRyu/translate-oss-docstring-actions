@@ -1,7 +1,5 @@
-"""翻訳および抽出処理で利用する例外定義。"""
-
-class ExtractorError(Exception):
-    """抽出処理における基底例外。"""
+class ExtractionError(Exception):
+    """抽出処理に関する基底例外。"""
 
 
 class TranslationError(Exception):
@@ -9,11 +7,11 @@ class TranslationError(Exception):
 
 
 class TranslationRequestError(TranslationError):
-    """LLM問い合わせに失敗した場合の例外。"""
+    """LLMリクエストに失敗した場合の例外。"""
 
 
 class TranslationParseError(TranslationError):
-    """翻訳結果のパースに失敗した場合の例外。"""
+    """翻訳結果の解析に失敗した場合の例外。"""
 
 
 class TokenLimitExceededError(TranslationError):

@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import json
 import sys
@@ -43,15 +44,17 @@ class PipelineScenarioTests(unittest.TestCase):
                 }
             )
 
-            translate.run(
-                {
-                    "input": str(extracted),
-                    "output": str(translated),
-                    "failed_output": str(failed),
-                    "translator_kind": "dummy",
-                    "batch_size": 4,
-                    "system_prompt": "test",
-                }
+            asyncio.run(
+                translate.run(
+                    {
+                        "input": str(extracted),
+                        "output": str(translated),
+                        "failed_output": str(failed),
+                        "mock_mode": True,
+                        "batch_size": 4,
+                        "system_prompt": "test",
+                    }
+                )
             )
 
             replace.run(

@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import json
 import sys
@@ -30,15 +31,17 @@ class TranslateDummyTests(unittest.TestCase):
             failed_path = Path(tmpdir) / "failed.jsonl"
 
             # when: dummy翻訳モードで翻訳処理を実行する
-            translate.run(
-                {
-                    "input": str(input_path),
-                    "output": str(output_path),
-                    "failed_output": str(failed_path),
-                    "translator_kind": "dummy",
-                    "batch_size": 2,
-                    "system_prompt": "test",
-                }
+            asyncio.run(
+                translate.run(
+                    {
+                        "input": str(input_path),
+                        "output": str(output_path),
+                        "failed_output": str(failed_path),
+                        "mock_mode": True,
+                        "batch_size": 2,
+                        "system_prompt": "test",
+                    }
+                )
             )
 
             # then: 成功出力に mock 翻訳が書き出され、失敗出力は空である

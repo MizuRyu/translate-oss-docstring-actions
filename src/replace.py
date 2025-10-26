@@ -40,7 +40,7 @@ def run(settings: Dict[str, Any]) -> None:
         docstrings = sum(1 for item in items if item["kind"].endswith("docstring"))
         comments = sum(1 for item in items if item["kind"] == "comment")
         logger.info(
-            "\nGenerated\nPath: %s\nDocstrings: %d\nComments: %d",
+            "\nGenerated Complete\nPath: %s\nDocstrings: %d\nComments: %d",
             relative,
             docstrings,
             comments,

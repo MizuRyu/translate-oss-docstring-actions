@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -49,7 +50,7 @@ def create_parser() -> argparse.ArgumentParser:
     translate.add_argument("--failed-output", default="unprocessed.jsonl")
     translate.add_argument("--limit", type=int, default=None)
     translate.add_argument("--system-prompt-file", default=None)
-    translate.add_argument("--translator-kind", choices=["azure", "dummy"], default="azure")
+    translate.add_argument("--mock", action="store_true", dest="mock_mode", help="LLMを呼び出さずモックで翻訳する")
     translate.add_argument("--batch-size", type=int, default=5)
     translate.add_argument("--log-level", default="INFO")
 
@@ -93,7 +94,7 @@ def parse_args(argv: Optional[Sequence[str]]) -> Dict[str, Any]:
                 "limit": args.limit,
                 "system_prompt": prompt,
                 "batch_size": args.batch_size,
-                "translator_kind": args.translator_kind,
+                "mock_mode": args.mock_mode,
                 "log_level": args.log_level,
             },
         }
@@ -120,7 +121,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if command == "extract":
         run_extract(settings)
     elif command == "translate":
-        run_translate(settings)
+        asyncio.run(run_translate(settings))
     else:
         run_replace(settings)
 

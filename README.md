@@ -38,13 +38,14 @@ libcst を利用して Python ファイルから docstring / コメント / ロ�
    uv run python main.py translate extracted.jsonl \
      --output translated.jsonl \
      --failed-output unprocessed.jsonl \
-     --translator-kind dummy \
      --batch-size 5 \
+     --mock \
      --log-level INFO
    ```
 
-   - 実際に Azure AI Inference へ送る場合は `--translator-kind azure` を指定し、環境変数 `AZURE_INFERENCE_TOKEN`（または `GITHUB_TOKEN`）をセットしてください。必要に応じて `AZURE_INFERENCE_ENDPOINT` / `AZURE_INFERENCE_MODEL` / `AZURE_INFERENCE_API_VERSION` で上書きできます。
-   - 処理中はバッチごとにログが出力され、終了ログには合計リクエスト回数が表示されます。
+   - `--mock` を付けると LLM を呼び出さずに `(mock)` を付けた結果を返し、`unprocessed.jsonl` には残さず完走します。
+   - 実際の GitHub Models を利用する場合は `--mock` を外し、環境変数 `GITHUB_MODELS_ENDPOINT` / `GITHUB_TOKEN` / `GITHUB_MODELS_MODEL` を設定してください。レート制限に遭った場合は `AZURE_INFERENCE_ENDPOINT` / `AZURE_INFERENCE_CREDENTIAL` / `AZURE_INFERENCE_MODEL` が揃っていれば Azure Inference に自動フォールバックします。
+   - トークン上限 (既定 7,500) を超えるエントリは即座に `unprocessed.jsonl` へ書き出され、警告ログが表示されます。
 
 4. 反映
 

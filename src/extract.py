@@ -25,7 +25,10 @@ def run(settings: Dict[str, Any]) -> None:
         return
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.info("抽出開始 対象ファイル数:%d", len(python_files))
+    logger.info(
+        "\nExtract Start\nTarget Files: %d",
+        len(python_files),
+    )
 
     start = perf_counter()
     stats = {"files": len(python_files), "files_with_items": 0, "items": 0, "tokens": 0, "chars": 0}
@@ -52,7 +55,10 @@ def run(settings: Dict[str, Any]) -> None:
         "total_chars": stats["chars"],
         "execution_time_sec": round(duration, 3),
     }
-    logger.info("抽出完了 %s", json.dumps(summary, ensure_ascii=False))
+    logger.info(
+        "\nExtract Complete\n%s",
+        json.dumps(summary, ensure_ascii=False),
+    )
 
 
 def _glob_python_files(root: Path, excludes: Sequence[str]) -> List[Path]:

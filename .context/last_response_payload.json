@@ -1,0 +1,140 @@
+{
+  "translations": [
+    {
+      "index": 0,
+      "translation": "Copyright (c) Microsoft. All rights reserved."
+    },
+    {
+      "index": 1,
+      "translation": "Copyright (c) Microsoft. All rights reserved."
+    },
+    {
+      "index": 2,
+      "translation": "Azure OpenAI Assistants クライアント。"
+    },
+    {
+      "index": 3,
+      "translation": "Azure OpenAI Assistants クライアントを初期化します。\n\n        Keyword Args:\n            deployment_name: モデルに使用する Azure OpenAI のデプロイメント名。\n                環境変数 AZURE_OPENAI_CHAT_DEPLOYMENT_NAME でも設定可能です。\n            assistant_id: 使用する Azure OpenAI assistant の ID。\n                指定しない場合、新しい assistant が作成され（リクエスト後に削除されます）。\n            assistant_name: 新しい assistants を作成するときに使用する名前。\n            thread_id: 会話で使用するデフォルトのスレッドID。\n                リクエスト時の conversation_id プロパティで上書き可能。\n                指定しない場合、新しいスレッドが作成され（リクエスト後に削除されます）。\n            api_key: 使用する API キー。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_API_KEY でも設定可能です。\n            endpoint: デプロイメントのエンドポイント。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_ENDPOINT でも設定可能です。\n            base_url: デプロイメントのベース URL。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_BASE_URL でも設定可能です。\n            api_version: デプロイメントの API バージョン。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_API_VERSION でも設定可能です。\n            ad_token: Azure Active Directory のトークン。\n            ad_token_provider: Azure Active Directory トークンのプロバイダー。\n            token_endpoint: Azure トークンをリクエストするトークンエンドポイント。\n                環境変数 AZURE_OPENAI_TOKEN_ENDPOINT でも設定可能です。\n            credential: 認証に使用する Azure の資格情報。\n            default_headers: HTTP リクエスト用の文字列キーと文字列値のデフォルトヘッダーのマッピング。\n            async_client: 使用する既存のクライアント。\n            env_file_path: 環境変数のフォールバックとして環境設定ファイルを使用。\n            env_file_encoding: 環境設定ファイルのエンコーディング。\n\n        Examples:\n            .. code-block:: python\n\n                from agent_framework.azure import AzureOpenAIAssistantsClient\n\n                # 環境変数を使用する場合\n                # Set AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com\n                # Set AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4\n                # Set AZURE_OPENAI_API_KEY=your-key\n                client = AzureOpenAIAssistantsClient()\n\n                # またはパラメーターを直接渡す場合\n                client = AzureOpenAIAssistantsClient(\n                    endpoint=\"https://your-endpoint.openai.azure.com\", deployment_name=\"gpt-4\", api_key=\"your-key\"\n                )\n\n                # または .env ファイルから読み込む場合\n                client = AzureOpenAIAssistantsClient(env_file_path=\"path/to/.env\")"
+    },
+    {
+      "index": 4,
+      "translation": "pydantic の設定は値があるか確認し、なければ環境変数または .env ファイルを試みます"
+    },
+    {
+      "index": 5,
+      "translation": "認証を処理します: まず API キーを試し、次に AD トークン、その後 Entra ID を試みます"
+    },
+    {
+      "index": 6,
+      "translation": "提供されていなければ Azure クライアントを作成します"
+    },
+    {
+      "index": 7,
+      "translation": "Copyright (c) Microsoft. All rights reserved."
+    },
+    {
+      "index": 8,
+      "translation": "Azure OpenAI Chat completion クラス。"
+    },
+    {
+      "index": 9,
+      "translation": "Azure OpenAI Chat completion クライアントを初期化します。\n\n        Keyword Args:\n            api_key: API キー。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_API_KEY でも設定可能です。\n            deployment_name: デプロイメント名。指定すると環境変数や .env ファイルの chat_deployment_name の値を上書きします。\n                環境変数 AZURE_OPENAI_CHAT_DEPLOYMENT_NAME でも設定可能です。\n            endpoint: デプロイメントのエンドポイント。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_ENDPOINT でも設定可能です。\n            base_url: デプロイメントのベース URL。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_BASE_URL でも設定可能です。\n            api_version: デプロイメントの API バージョン。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_API_VERSION でも設定可能です。\n            ad_token: Azure Active Directory のトークン。\n            ad_token_provider: Azure Active Directory トークンのプロバイダー。\n            token_endpoint: Azure トークンをリクエストするトークンエンドポイント。\n                環境変数 AZURE_OPENAI_TOKEN_ENDPOINT でも設定可能です。\n            credential: 認証に使用する Azure の資格情報。\n            default_headers: HTTP リクエスト用の文字列キーと文字列値のデフォルトヘッダーのマッピング。\n            async_client: 使用する既存のクライアント。\n            env_file_path: 環境変数のフォールバックとして環境設定ファイルを使用。\n            env_file_encoding: 環境設定ファイルのエンコーディング。デフォルトは 'utf-8'。\n            instruction_role: 'instruction' メッセージで使用するロール。例: 要約用の Prompt では `developer` や `system` を使用可能。\n            kwargs: その他のキーワードパラメータ。\n\n        Examples:\n            .. code-block:: python\n\n                from agent_framework.azure import AzureOpenAIChatClient\n\n                # 環境変数を使用する場合\n                # Set AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com\n                # Set AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4\n                # Set AZURE_OPENAI_API_KEY=your-key\n                client = AzureOpenAIChatClient()\n\n                # またはパラメーターを直接渡す場合\n                client = AzureOpenAIChatClient(\n                    endpoint=\"https://your-endpoint.openai.azure.com\", deployment_name=\"gpt-4\", api_key=\"your-key\"\n                )\n\n                # または .env ファイルから読み込む場合\n                client = AzureOpenAIChatClient(env_file_path=\"path/to/.env\")"
+    },
+    {
+      "index": 10,
+      "translation": "引数から None の値を除外します"
+    },
+    {
+      "index": 11,
+      "translation": "pydantic の設定は値があるか確認し、なければ環境変数または .env ファイルを試みます"
+    },
+    {
+      "index": 12,
+      "translation": "choice を TextContent オブジェクトにパースします。\n\n        OpenAIBaseChatClient からオーバーライドしており、Azure On Your Data 機能に対応しています。\n        ドキュメントは以下を参照してください:\n        https://learn.microsoft.com/en-us/azure/ai-foundry/openai/references/on-your-data?tabs=python#context"
+    },
+    {
+      "index": 13,
+      "translation": "Context は有効な JSON 文字列ではありません。context を無視します。"
+    },
+    {
+      "index": 14,
+      "translation": "Context は有効な辞書ではありません。context を無視します。"
+    },
+    {
+      "index": 15,
+      "translation": "`all_retrieved_documents` は現在使用されていませんが、テキストコンテンツの raw_representation で取得可能です。"
+    },
+    {
+      "index": 16,
+      "translation": "Copyright (c) Microsoft. All rights reserved."
+    },
+    {
+      "index": 17,
+      "translation": "指定されたトークンエンドポイントから Microsoft Entra 認証トークンを取得します。\n\n    トークンエンドポイントは環境変数、.env ファイル、または引数で指定可能です。\n    指定しない場合のデフォルトは None です。\n\n    Args:\n        credential: 認証に使用する Azure の資格情報。\n        token_endpoint: 認証トークン取得に使用するトークンエンドポイント。\n\n    Keyword Args:\n        **kwargs: トークン取得メソッドに渡す追加のキーワード引数。\n\n    Returns:\n        トークンが取得できない場合は None、それ以外は Azure トークン。"
+    },
+    {
+      "index": 18,
+      "translation": "指定されたトークンエンドポイントから非同期で Microsoft Entra 認証トークンを取得します。\n\n    トークンエンドポイントは環境変数、.env ファイル、または引数で指定可能です。\n    指定しない場合のデフォルトは None です。\n\n    Args:\n        credential: 認証に使用する非同期 Azure の資格情報。\n        token_endpoint: 認証トークン取得に使用するトークンエンドポイント。\n\n    Keyword Args:\n        **kwargs: トークン取得メソッドに渡す追加のキーワード引数。\n\n    Returns:\n        トークンが取得できない場合は None、それ以外は Azure トークン。"
+    },
+    {
+      "index": 19,
+      "translation": "Copyright (c) Microsoft. All rights reserved."
+    },
+    {
+      "index": 20,
+      "translation": "Azure Responses completion クラス。"
+    },
+    {
+      "index": 21,
+      "translation": "Azure OpenAI Responses クライアントを初期化します。\n\n        Keyword Args:\n            api_key: API キー。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_API_KEY でも設定可能です。\n            deployment_name: デプロイメント名。指定すると環境変数や .env ファイルの responses_deployment_name の値を上書きします。\n                環境変数 AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME でも設定可能です。\n            endpoint: デプロイメントのエンドポイント。指定すると環境変数や .env ファイルの値を上書きします。\n                環境変数 AZURE_OPENAI_ENDPOINT でも設定可能です。\n            base_url: デプロイメントのベース URL。指定すると環境変数や .env ファイルの値を上書きします。\n                現在、base_url は \"/openai/v1/\" で終わる必要があります。\n                環境変数 AZURE_OPENAI_BASE_URL でも設定可能です。\n            api_version: デプロイメントの API バージョン。指定すると環境変数や .env ファイルの値を上書きします。\n                現在、api_version は \"preview\" である必要があります。\n                環境変数 AZURE_OPENAI_API_VERSION でも設定可能です。\n            ad_token: Azure Active Directory のトークン。\n            ad_token_provider: Azure Active Directory トークンのプロバイダー。\n            token_endpoint: Azure トークンをリクエストするトークンエンドポイント。\n                環境変数 AZURE_OPENAI_TOKEN_ENDPOINT でも設定可能です。\n            credential: 認証に使用する Azure の資格情報。\n            default_headers: HTTP リクエスト用の文字列キーと文字列値のデフォルトヘッダーのマッピング。\n            async_client: 使用する既存のクライアント。\n            env_file_path: 環境変数のフォールバックとして環境設定ファイルを使用。\n            env_file_encoding: 環境設定ファイルのエンコーディング。デフォルトは 'utf-8'。\n            instruction_role: 'instruction' メッセージで使用するロール。例: 要約用の Prompt では `developer` や `system` を使用可能。\n            kwargs: 追加のキーワード引数。\n\n        Examples:\n            .. code-block:: python\n\n                from agent_framework.azure import AzureOpenAIResponsesClient\n\n                # 環境変数を使用する場合\n                # Set AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com\n                # Set AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=gpt-4o\n                # Set AZURE_OPENAI_API_KEY=your-key\n                client = AzureOpenAIResponsesClient()\n\n                # またはパラメーターを直接渡す場合\n                client = AzureOpenAIResponsesClient(\n                    endpoint=\"https://your-endpoint.openai.azure.com\", deployment_name=\"gpt-4o\", api_key=\"your-key\"\n                )\n\n                # または .env ファイルから読み込む場合\n                client = AzureOpenAIResponsesClient(env_file_path=\"path/to/.env\")"
+    },
+    {
+      "index": 22,
+      "translation": "pydantic の設定は値があるか確認し、なければ環境変数または .env ファイルを試みます"
+    },
+    {
+      "index": 23,
+      "translation": "TODO(peterychang): この機能がプレビュー中の間、base_url が正しく設定されていることを保証するための一時的なハックです。\nただし、Azure 環境下でのみ実施すべきであり、プライベートデプロイでは不要な場合があります。"
+    },
+    {
+      "index": 24,
+      "translation": "Copyright (c) Microsoft. All rights reserved."
+    },
+    {
+      "index": 25,
+      "translation": "AzureOpenAI のモデル設定。\n\n    設定は最初に 'AZURE_OPENAI_' プレフィックス付きの環境変数から読み込まれます。\n    環境変数が見つからない場合は、エンコーディング 'utf-8' の .env ファイルから読み込むことができます。\n    .env ファイルにも設定が見つからなければ無視されますが、バリデーションが失敗し設定が不足していることを通知します。\n\n    Keyword Args:\n        endpoint: Azure デプロイメントのエンドポイント。\n            Azure ポータルのリソースの Keys & Endpoint セクションで確認可能で、endpoint は openai.azure.com で終わる必要があります。\n            base_url と endpoint の両方が指定された場合は base_url が優先されます。\n            環境変数 AZURE_OPENAI_ENDPOINT で設定可能です。\n        chat_deployment_name: Azure Chat デプロイメントの名前。\n            モデルをデプロイしたときに指定したカスタム名に対応します。\n            Azure ポータルの Resource Management > Deployments または Azure AI Foundry の Management > Deployments で確認可能です。\n            環境変数 AZURE_OPENAI_CHAT_DEPLOYMENT_NAME で設定可能です。\n        responses_deployment_name: Azure Responses デプロイメントの名前。\n            モデルをデプロイしたときに指定したカスタム名に対応します。\n            Azure ポータルの Resource Management > Deployments または Azure AI Foundry の Management > Deployments で確認可能です。\n            環境変数 AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME で設定可能です。\n        api_key: Azure デプロイメントの API キー。\n            Azure ポータルの Keys & Endpoint セクションで確認可能で、KEY1 または KEY2 を使用可能です。\n            環境変数 AZURE_OPENAI_API_KEY で設定可能です。\n        api_version: 使用する API バージョン。デフォルトは `default_api_version`。\n            環境変数 AZURE_OPENAI_API_VERSION で設定可能です。\n        base_url: Azure デプロイメントの URL。\n            Azure ポータルの Keys & Endpoint セクションで確認可能で、endpoint に続けて /openai/deployments/{deployment_name}/ を付けたものです。\n            endpoint のみを指定したい場合は endpoint を使用してください。\n            環境変数 AZURE_OPENAI_BASE_URL で設定可能です。\n        token_endpoint: 認証トークン取得に使用するトークンエンドポイント。\n            デフォルトは `default_token_endpoint`。\n            環境変数 AZURE_OPENAI_TOKEN_ENDPOINT で設定可能です。\n        default_api_version: 指定がなければ使用するデフォルトの API バージョン。\n            デフォルトは \"2024-10-21\"。\n        default_token_endpoint: 指定がなければ使用するデフォルトのトークンエンドポイント。\n            デフォルトは \"https://cognitiveservices.azure.com/.default\"。\n        env_file_path: 設定を読み込む .env ファイルのパス。\n        env_file_encoding: .env ファイルのエンコーディング。デフォルトは 'utf-8'。\n\n    Examples:\n        .. code-block:: python\n\n            from agent_framework.azure import AzureOpenAISettings\n\n            # 環境変数を使用する場合\n            # Set AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com\n            # Set AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4\n            # Set AZURE_OPENAI_API_KEY=your-key\n            settings = AzureOpenAISettings()\n\n            # またはパラメーターを直接渡す場合\n            settings = AzureOpenAISettings(\n                endpoint=\"https://your-endpoint.openai.azure.com\", chat_deployment_name=\"gpt-4\", api_key=\"your-key\"\n            )\n\n            # または .env ファイルから読み込む場合\n            settings = AzureOpenAISettings(env_file_path=\"path/to/.env\")"
+    },
+    {
+      "index": 26,
+      "translation": "Azure OpenAI で使用するための指定されたトークンエンドポイントから Microsoft Entra 認証トークンを取得します。\n\n        トークンに必要なロールは `Cognitive Services OpenAI Contributor` です。\n        トークンエンドポイントは環境変数、.env ファイル、または引数で指定可能です。\n        指定しない場合のデフォルトは None です。\n        `token_endpoint` 引数が `token_endpoint` 属性より優先されます。\n\n        Args:\n            credential: 使用する Azure AD の資格情報。\n            token_endpoint: 使用するトークンエンドポイント。デフォルトは `https://cognitiveservices.azure.com/.default`。\n\n        Keyword Args:\n            **kwargs: トークン取得メソッドに渡す追加のキーワード引数。\n\n        Returns:\n            トークンが取得できない場合は None、それ以外は Azure トークン。\n\n        Raises:\n            ServiceInitializationError: トークンエンドポイントが指定されていない場合に発生。"
+    },
+    {
+      "index": 27,
+      "translation": "Azure OpenAI サービスへの接続を設定するための内部クラス。"
+    },
+    {
+      "index": 28,
+      "translation": "Azure OpenAI サービスへの接続を設定するための内部クラス。\n\n        `validate_call` デコレーターは任意の型を許容する設定で使用されます。\n        これは `HTTPsUrl` や `OpenAIModelTypes` のような型に必要です。\n\n        Args:\n            deployment_name: デプロイメントの名前。\n            endpoint: デプロイメントの特定のエンドポイント URL。\n            base_url: Azure サービスのベース URL。\n            api_version: Azure API バージョン。デフォルトは DEFAULT_AZURE_API_VERSION。\n            api_key: Azure サービスの API キー。\n            ad_token: 認証用の Azure AD トークン。\n            ad_token_provider: Azure AD トークンを提供する callable またはコルーチン関数。\n            token_endpoint: トークン取得に使用する Azure AD トークンエンドポイント。\n            credential: 認証用の Azure 資格情報。\n            default_headers: HTTP リクエストのデフォルトヘッダー。\n            client: 使用する既存のクライアント。\n            instruction_role: 'instruction' メッセージで使用するロール。例: 要約用の Prompt では `developer` や `system` を使用可能。\n            kwargs: 追加のキーワード引数。"
+    },
+    {
+      "index": 29,
+      "translation": "注: INJECTABLE = {\"client\"} は OpenAIBase から継承されています"
+    },
+    {
+      "index": 30,
+      "translation": "APP_INFO が存在する場合はヘッダーにマージします"
+    },
+    {
+      "index": 31,
+      "translation": "client が None、api_key が None、ad_token が None、ad_token_provider が None の場合は、\nAzure OpenAI 設定で指定されたデフォルトエンドポイントを使用して ad_token を取得しようとします。"
+    },
+    {
+      "index": 32,
+      "translation": "シリアライズのために構成をインスタンス属性として保存します"
+    },
+    {
+      "index": 33,
+      "translation": "USER_AGENT_KEY を除外して default_headers をシリアライズ用に保存します"
+    }
+  ]
+}

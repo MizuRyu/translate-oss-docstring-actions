@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# environment variables
+.env
+
+test_data/*
+translated_sources/*
+
+extracted.jsonl
+translated.jsonl
+unprocessed.jsonl

@@ -1,243 +1,163 @@
-# AIエージェント仕様書作成システム - コーディング規約
+# AGENTS.md
 
-## 0. プロジェクト固有ルール
-### ルール
-- クラスはあまり使わないで、関数志向で実装すること。
-- 無駄な早期リターンやnullチェックは行わないこと。コードが増えるので、最小限のコードとしてください。
-- コメントやコミット、開発で用いる言語は基本的に指示がない箇所は日本語を使用すること。
+このファイルは、AIコーディングエージェントがこのPythonリポジトリで作業する際のガイダンスを提供します。
 
----
+## プロジェクト哲学
 
-以下は基本的なコーディング規約です。常に従ってください。
+**関数指向の設計:**
+- オブジェクトの状態管理が必要な場合を除き、クラスよりも関数を優先する
+- コードは最小限に保つ - 不要な早期リターンやnullチェックを避ける
+- 特に指示がない限り、コメントやコミットは日本語で記述する
 
-## 1. 構造・サイズの上限
+**コード制約:**
+- 関数の長さ: ≤ 40行（推奨: 20-30行）
+- ファイルの長さ: ≤ 400行
+- ネストの深さ: ≤ 3レベル
+- パラメータ数: ≤ 5個
+- クラスの責務: 単一責任原則（SRP）を厳守
 
-### 1.1 関数・メソッド
-- **関数長**: ≤ 40行（推奨: 20-30行）
-- 早期return/guard節でネスト削減
-- 150文字以上の重複コードを回避
+## アーキテクチャ概要
 
-```python
-# 良い例
-def process_requirements(requirements: Dict[str, Any]) -> ProcessedRequirements:
-    """要件を処理して構造化データを返す"""
-    if not requirements:
-        return ProcessedRequirements.empty()
-    
-    # Guard節で早期return
-    if not self._validate_requirements(requirements):
-        raise InvalidRequirementsError("要件の検証に失敗しました")
-    
-    # メイン処理を小関数に分割
-    parsed = self._parse_requirements(requirements)
-    validated = self._validate_parsed_data(parsed)
-    return self._structure_requirements(validated)
-```
+これは、libcstによるAST操作とGitHub Models/Azure AI InferenceによるLLM翻訳を使用して、Pythonコードベースのdocstringとコメントを翻訳するPython CLIツールです。
 
-### 1.2 ファイル・クラス
-- **ファイル長**: ≤ 400行
-- **ネスト深さ**: ≤ 3
-- **パラメータ数**: ≤ 5
-- **クラス責務**: 単一責任原則（SRP）厳守
+**コアデータフロー:**
 
-```python
-# 悪い例（God Class）
-class SpecificationManager:  # ❌ 複数責務
-    def generate_scenario(self): ...
-    def review_requirements(self): ...
-    def save_to_database(self): ...
-    def send_notification(self): ...
+1. **Extract** (`src/extract.py`) - libcstでPythonファイルを解析し、docstring/コメントを抽出
+2. **Translate** (`src/translate.py`) - LLM APIを使用して抽出テキストをバッチ翻訳
+3. **Replace** (`src/replace.py`) - 位置情報ベースの置換で翻訳結果をソースファイルに適用
 
-# 良い例（責務分離）
-class ScenarioGenerator:  # ✅ 単一責務
-    """シナリオ生成に特化"""
-    def generate(self, overview: str) -> Scenario: ...
+**主要なデータ構造:**
 
-class RequirementsReviewer:  # ✅ 単一責務
-    """要件レビューに特化"""
-    def review(self, requirements: Requirements) -> ReviewResult: ...
-```
+- 抽出エントリはJSONL形式: `path`, `kind`, `text`, `line_start`, `line_end`, `col_offset`
+- 翻訳バッチはトークン制限でグループ化（1リクエストあたり最大2,500トークン）
+- GitHub Modelsシーケンス: `openai/gpt-4.1` → `openai/gpt-4.1-mini` → Azure Fallback
 
-## 2. 命名・可読性
+**外部依存関係:**
 
-### 2.1 命名規則
-```python
-# 関数名: 動詞+目的語
-def parse_scenario(text: str) -> Scenario: ...
-def validate_requirements(reqs: Requirements) -> bool: ...
-def sync_agents(agent_list: List[Agent]) -> None: ...
+- `libcst` - AST解析とコード修正
+- `tiktoken` - トークンカウント
+- GitHub Models API（無料枠）とAzure AI Inference（フォールバック）
+- レート制限: RPM (10/15), RPD (150), 同時実行数 (2/5)
 
-# クラス名: 名詞（役割を表す）
-class ScenarioGenerator: ...
-class RequirementsValidator: ...
-class AgentOrchestrator: ...
+## 開発コマンド
 
-# 定数: 大文字スネークケース
-MAX_RETRY_COUNT = 3
-DEFAULT_TIMEOUT_SECONDS = 120
-AZURE_OPENAI_ENDPOINT = "https://..."
+**テストと品質管理:**
 
-# 変数名: 意味が明確な名前
-user_input = get_user_input()  # ✅
-ui = get_user_input()  # ❌ 不明瞭
-```
+- `make test` - unittestで全テストを実行
+- `make extract` - docstring/コメントの抽出のみ実行
+- `make translate` - 抽出データの翻訳のみ実行
+- `make replace` - 翻訳結果のソースファイルへの適用のみ実行
+- `make pipeline` - 全パイプライン（extract→translate→replace）を実行
+- `make clean` - 生成ファイル（out/）を削除
 
-### 2.2 魔法数の禁止
-```python
-# 悪い例
-if len(text) > 5000:  # ❌ 魔法数
-    truncate_text(text)
+**開発時の使用方法:**
 
-# 良い例
-MAX_TEXT_LENGTH = 5000  # ✅ 定数化
+- `uv run python main.py extract test_data --output out/extracted.jsonl`
+- `uv run python main.py translate out/extracted.jsonl --output out/translated.jsonl`
+- `uv run python main.py replace out/translated.jsonl --output-dir out/translated_sources`
 
-if len(text) > MAX_TEXT_LENGTH:
-    truncate_text(text)
-```
+**環境変数:**
 
-## 3. コメント＆ドキュメント（AI補完最適化）
+- `GITHUB_TOKEN` - GitHub Models APIトークン（必須）
+- `GITHUB_MODELS_ENDPOINT` - GitHub Modelsエンドポイント（デフォルト: https://models.inference.ai.azure.com）
+- `AZURE_INFERENCE_ENDPOINT` - Azure AI Inferenceエンドポイント（フォールバック用）
+- `AZURE_INFERENCE_CREDENTIAL` - Azure AI Inference APIキー（フォールバック用）
+- `AZURE_INFERENCE_MODEL` - Azureモデル名（デフォルト: gpt-4.1-mini）
+- `LOG_LEVEL` - ログレベル（DEBUG/INFO/WARNING/ERROR）
 
-### 3.1 関数・クラスのドキュメント
-```python
-class ReviewTeamChat(SelectorGroupChat):
-    """
-    レビューチーム用のグループチャット管理クラス
-    
-    複数のレビュアーエージェントを協調させ、
-    要件や設計を多角的にレビューする
-    """
-    
-    def run_review(self, requirements: str) -> ReviewResult:
-        """
-        要件レビューを実行する
-        
-        Args:
-            requirements: レビュー対象の要件テキスト
-            
-        Returns:
-            ReviewResult: 各観点からのレビュー結果
-            
-        Raises:
-            ReviewTimeoutError: レビューがタイムアウトした場合
-            AgentNotAvailableError: 必要なエージェントが利用不可の場合
-        """
-        # 実装
-```
+## コードスタイル
 
-### 3.2 意図コメント
-```python
-def process_parallel_reviews(self, reviews: List[Review]) -> ConsolidatedReview:
-    """並列レビュー結果を統合する"""
-    
-    # セキュリティレビューを優先的に処理
-    # 理由: セキュリティ問題は他の観点より重要度が高いため
-    security_issues = self._extract_security_issues(reviews)
-    if security_issues.is_critical():
-        return ConsolidatedReview.critical_failure(security_issues)
-    
-    # 通常の統合処理に進む
-    return self._merge_reviews(reviews)
-```
+**命名規則:**
 
-## 4. 例外・エラー設計
+- 変数/関数: `snake_case`（例: `parse_config`, `user_input`）
+- クラス: `PascalCase`（例: `DataProcessor`, `InputValidator`）
+- 定数: `UPPER_SNAKE_CASE`（例: `MAX_RETRY_COUNT`, `API_ENDPOINT`）
+- プライベート関数/メソッド: `_leading_underscore`（例: `_validate_data`）
 
-### ドメイン固有例外
-```python
-# ドメイン固有の例外定義
-class SpecificationError(Exception):
-    """仕様書作成システムの基底例外"""
-    pass
+**型ヒント:**
 
-class ScenarioGenerationError(SpecificationError):
-    """シナリオ生成時のエラー"""
-    pass
+- 関数のパラメータと戻り値には必ず型ヒントを使用
+- 柔軟な辞書には`Dict[str, Any]`を使用
+- `typing`モジュールから`List[Type]`, `Optional[Type]`を使用
+- ファイルパスには`pathlib`の`Path`を使用
 
-class ReviewTimeoutError(SpecificationError):
-    """レビュータイムアウトエラー"""
-    pass
+**エラーハンドリング:**
 
-# 使用例
-def generate_scenario(overview: str) -> Scenario:
-    """シナリオを生成する"""
-    try:
-        # 最小スコープでtry-except
-        response = await agent.generate(overview)
-    except OpenAIError as e:
-        # ドメイン固有例外でラップ
-        raise ScenarioGenerationError(f"シナリオ生成に失敗: {e}") from e
-    
-    return self._parse_scenario(response)
-```
+- ドメイン固有の例外を使用（例: `DataProcessingError`, `ProcessingTimeoutError`）
+- 外部ライブラリの例外は`raise ... from e`でカスタム例外でラップ
+- try-exceptブロックは最小限に - 例外が発生する可能性のある操作のみをラップ
+- 例外を発生させる前にコンテキスト付きでログを記録
 
-## 5. 依存・再利用
+**インポート規則:**
 
-### 既存関数の合成
-```python
-# 既存関数を組み合わせて新機能を実現
-def process_and_review(self, text: str) -> ReviewedContent:
-    """処理とレビューを組み合わせた機能"""
-    
-    # 既存関数の合成
-    parsed = self.parse_content(text)  # 既存
-    validated = self.validate_content(parsed)  # 既存
-    reviewed = self.review_content(validated)  # 既存
-    
-    return ReviewedContent(
-        original=text,
-        parsed=parsed,
-        validation_result=validated,
-        review_result=reviewed
-    )
-```
+- 標準ライブラリ、サードパーティ、ローカルインポートの順
+- プロジェクトモジュールには絶対インポートを使用（例: `from extract import run`）
+- インポートは論理的にグループ化し、グループ内でアルファベット順に配置
 
-## 6. Git/PR運用
+**マジックナンバー:**
 
-### 6.1 Author情報の付与
-- commit時は以下の形式を原則とし、必ずAuthor情報(name/email)を明示的に設定してコマンド実行すること。  
+- コード内にマジックナンバーを使用しない - 常に定数を定義
+- 例: `if len(text) > 5000:`ではなく`MAX_TEXT_LENGTH = 5000`
 
-  ```bash
-  GIT_AUTHOR_NAME="codex" \
-  GIT_AUTHOR_EMAIL="codex@noreply.github.com" \
-  git commit -m "feat: 自動生成コードの更新"
-  ```
+**エクスポート規則:**
 
-### 6.2 コミットの分割
-- 一度に変更を`git add .`でまとめようとしないでください。
-- ファイル名を指定して`git add`するようにしてください。
-- commitは適切な粒度で行ってください。複数に分割されることは許可されています。
+- 他のモジュールで実際に使用される関数/クラスのみをエクスポート
+- 内部ユーティリティはプライベートのまま（エクスポートしない）
+- パブリックAPIの表面積を最小化
 
-### 6.3 コミットメッセージ
-そのうえで以下のmsgにすること。
+## Git/PR運用
+
+**Author情報の付与:**
+
+commit時は必ずAuthor情報（name/email）を明示的に設定してコマンド実行すること：
+
 ```bash
-# フォーマット: type(scope): summary
-
-feat(agents): シナリオ生成エージェントを追加
-fix(review): レビュータイムアウトの修正
-refactor(workflow): ワークフロークラスの責務分離
-test(scenario): シナリオ生成の境界値テスト追加
-docs(readme): インストール手順を更新
-chore(deps): AutoGenを0.7.3にアップデート
+GIT_AUTHOR_NAME="codex" \
+GIT_AUTHOR_EMAIL="codex@noreply.github.com" \
+git commit -m "feat: 新機能の追加"
 ```
 
-## 7 生成AI利用時の注意
-- userの指示が曖昧である場合、良い例のように解釈してください。
+**コミットの分割:**
 
-###  小さな単位での指示
+- 一度に変更を`git add .`でまとめない
+- ファイル名を指定して`git add`する
+- 適切な粒度で複数コミットに分割することを推奨
+
+**コミットメッセージフォーマット:**
+
+```bash
+# type(scope): summary
+
+feat(parser): 新しいパーサーを追加
+fix(validator): バリデーションのバグ修正
+refactor(processor): 処理クラスの責務分離
+test(parser): パーサーの境界値テスト追加
+docs(readme): インストール手順を更新
+chore(deps): 依存パッケージを更新
+```
+
+## 生成AI利用時の注意
+
+userの指示が曖昧である場合、良い例のように解釈してください。
+
+**小さな単位での指示:**
+
 ```python
 # 悪い例: 大きすぎる指示
 """
-SpecificationWorkflowクラス全体を実装してください。
-シナリオ生成、要件定義、レビュー、設計、すべての機能を含めてください。
+DataPipelineクラス全体を実装してください。
+データ取得、処理、検証、保存、すべての機能を含めてください。
 """
 
 # 良い例: 関数単位での指示
 """
-generate_scenario関数を実装してください。
-入力: overview (str) - システム概要
-出力: Scenario オブジェクト
+process_data関数を実装してください。
+入力: data (str) - 処理対象データ
+出力: ProcessedData オブジェクト
 制約: 
 - 最大5000文字まで処理
 - 空入力ではValidationError
-- Azure OpenAI APIを使用
+- 外部APIを使用
 """
 ```
+

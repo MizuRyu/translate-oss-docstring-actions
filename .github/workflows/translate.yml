@@ -85,21 +85,21 @@ jobs:
           uv run python scripts/summarize_tokens.py \
             --input out/extracted.jsonl \
             --output out/token-summary.json
-          
+
           # GitHub Outputに保存
           SUMMARY=$(cat out/token-summary.json)
           echo "json=$SUMMARY" >> "$GITHUB_OUTPUT"
-          
+
           # Step Summaryに詳細表示
           ITEMS=$(jq '.items // (.items | length?)' out/token-summary.json)
           TOKENS=$(jq '.tokens' out/token-summary.json)
           AVG_TOKENS=$(jq '.average_tokens' out/token-summary.json)
           MAX_TOKENS=$(jq '.max_tokens // 0' out/token-summary.json)
           MIN_TOKENS=$(jq '.min_tokens // 0' out/token-summary.json)
-          
+
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
           ## 📊 トークン使用量サマリ
-          
+
           | 項目 | 値 |
           |------|------|
           | 抽出件数 | **${ITEMS}件** |
@@ -107,10 +107,10 @@ jobs:
           | 平均トークン数 | **${AVG_TOKENS}** |
           | 最大トークン数 | ${MAX_TOKENS} |
           | 最小トークン数 | ${MIN_TOKENS} |
-          
+
           > ⚠️ 次のステップで翻訳を実行します。承認が必要です。
           EOF
-          
+
           # コンソールにも表示
           echo "============================================"
           echo "📊 トークン使用量サマリ"
@@ -212,6 +212,31 @@ jobs:
           [ -f run.log ] && cp run.log ${{ inputs.artifact_dir }}/ || true
           echo "Artifacts saved to: ${{ inputs.artifact_dir }}"
           ls -R ${{ inputs.artifact_dir }}
+
+      - name: Commit and push results (GitHub only)
+        if: ${{ !env.ACT }}
+        run: |
+          # Git設定
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 翻訳結果をコミット
+          git add ${{ inputs.artifact_dir }}
+
+          # 変更があればコミット
+          if git diff --staged --quiet; then
+            echo "変更なし - コミットをスキップ"
+          else
+            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            ITEMS=$(jq '.items // (.items | length?)' ${{ inputs.artifact_dir }}/token-summary.json)
+            git commit -m "chore(translation): 翻訳結果を追加" \
+              -m "Repository: ${{ inputs.repository_url }}" \
+              -m "Subdirectory: ${{ inputs.subdirectory }}" \
+              -m "Translated items: ${ITEMS}" \
+              -m "Timestamp: ${TIMESTAMP}"
+            git push
+            echo "✅ 翻訳結果をリポジトリにpushしました"
+          fi
 
       - name: Upload translation artifacts
         if: ${{ !env.ACT }}

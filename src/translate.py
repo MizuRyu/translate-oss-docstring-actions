@@ -67,7 +67,12 @@ async def run(settings: Dict[str, Any]) -> None:
     batch_results = [task.result() for task in tasks]
     results: List[Optional[List[str]]] = []
     errors: List[Optional[Exception]] = []
-    stats = {"primary_requests": 0, "fallback_requests": 0, "rate_limit_hits": 0}
+    stats = {
+        "primary_requests": 0,
+        "fallback_requests": 0,
+        "rate_limit_hits": 0,
+        "timeouts": 0,
+    }
 
     for translations, error, stat in batch_results:
         results.append(translations)
@@ -123,13 +128,15 @@ async def run(settings: Dict[str, Any]) -> None:
     primary_requests = stats.get("primary_requests", 0)
     fallback_requests = stats.get("fallback_requests", 0)
     rate_hits = stats.get("rate_limit_hits", 0)
+    timeouts = stats.get("timeouts", 0)
     logger.info(
-        "\nSuccess: %d\nFailed: %d\nLLM Requests Count: %d\nFallback Count: %d\nRate Limits Count: %d\nDuration: %.3f秒",
+        "\nSuccess: %d\nFailed: %d\nLLM Requests Count: %d\nFallback Count: %d\nRate Limits Count: %d\nTimeouts Count: %d\nDuration: %.3f秒",
         success_count,
         len(failure_items),
         primary_requests + fallback_requests,
         fallback_requests,
         rate_hits,
+        timeouts,
         duration,
     )
 

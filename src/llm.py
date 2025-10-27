@@ -24,6 +24,8 @@ GITHUB_MODELS_DAILY = 150
 REQUEST_OVERHEAD_TOKENS = 10
 TEMPERATURE = 0.2
 TOP_P = 1.0
+PRIMARY_TIMEOUT_SECONDS = 100.0
+FALLBACK_TIMEOUT_SECONDS = 100.0
 
 
 class TranslationEntry(BaseModel):
@@ -53,6 +55,17 @@ class TranslationRequestItem(BaseModel):
 
 class TranslationRequest(BaseModel):
     items: List[TranslationRequestItem]
+
+
+def _init_stats() -> Dict[str, int]:
+    """翻訳バッチで利用する統計情報の初期値を生成する"""
+
+    return {
+        "primary_requests": 0,
+        "fallback_requests": 0,
+        "rate_limit_hits": 0,
+        "timeouts": 0,
+    }
 
 class RequestRateLimiter:
     """GitHubエンドポイント向けの単純なレートリミッタ。"""
@@ -93,15 +106,11 @@ async def translate_batch(
     *,
     mock_mode: bool = False,
 ) -> Tuple[Optional[List[str]], Optional[Exception], Dict[str, int]]:
-    stats = {
-        "primary_requests": 0,
-        "fallback_requests": 0,
-        "rate_limit_hits": 0,
-    }
+    stats = _init_stats()
 
     texts = [entry["text"] for entry in entries]
 
-    logger.debug(f"texts to translate: {texts}")
+    logger.debug("translate_batch entries=%d mock_mode=%s", len(texts), mock_mode)
 
     if mock_mode:
         translations = await _mock_request(system_prompt, texts)
@@ -109,26 +118,53 @@ async def translate_batch(
 
     primary_client = get_github_client()
     primary_params = _get_model_config(os.getenv("GITHUB_MODELS_MODEL", "openai/gpt-4.1-mini"))
-    gh_models_limiter = RequestRateLimiter(GITHUB_MODELS_RPM, GITHUB_MODELS_DAILY)
+    limiter = RequestRateLimiter(GITHUB_MODELS_RPM, GITHUB_MODELS_DAILY)
 
     try:
-        await gh_models_limiter.acquire()
-        translations = await _invoke_client(primary_client, primary_params, system_prompt, texts)
-        stats["primary_requests"] = 1
+        await limiter.acquire()
+        translations = await asyncio.wait_for(
+            _invoke_client(primary_client, primary_params, system_prompt, texts),
+            timeout=PRIMARY_TIMEOUT_SECONDS,
+        )
+        stats["primary_requests"] += 1
         return translations, None, stats
+    except asyncio.TimeoutError:
+        logger.warning(
+            "GitHub primary timed out after %.1f sec entries=%d",
+            PRIMARY_TIMEOUT_SECONDS,
+            len(texts),
+        )
+        stats["timeouts"] += 1
     except (RateLimitError, DailyLimitError) as rate_error:
-        stats["rate_limit_hits"] = 1
-        try:
-            fallback_client = get_azure_client()
-            fallback_params = _get_model_config(os.getenv("AZURE_INFERENCE_MODEL", "gpt-4.1-mini"))
-        except TranslationRequestError as error:
-            combined = f"{rate_error} and fallback unavailable: {error}"
-            return None, RateLimitError(combined), stats
-        translations = await _invoke_client(fallback_client, fallback_params, system_prompt, texts)
-        stats["fallback_requests"] = 1
+        logger.debug("primary rate limit error=%s", rate_error)
+        stats["rate_limit_hits"] += 1
+    except (TranslationRequestError, TranslationParseError) as primary_error:
+        logger.debug("primary failed error=%s", primary_error)
+        stats["rate_limit_hits"] += 1
+
+    fallback_client = get_azure_client()
+    fallback_params = _get_model_config(os.getenv("AZURE_INFERENCE_MODEL", "gpt-4.1-mini"))
+
+    try:
+        translations = await asyncio.wait_for(
+            _invoke_client(fallback_client, fallback_params, system_prompt, texts),
+            timeout=FALLBACK_TIMEOUT_SECONDS,
+        )
+        stats["fallback_requests"] += 1
         return translations, None, stats
-    except (TranslationRequestError, TranslationParseError) as error:
-        return None, error, stats
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Azure fallback timed out after %.1f sec entries=%d",
+            FALLBACK_TIMEOUT_SECONDS,
+            len(texts),
+        )
+        stats["timeouts"] += 1
+        return None, RateLimitError("Azure fallback timed out"), stats
+    except (TranslationRequestError, TranslationParseError) as fallback_error:
+        logger.debug("fallback failed error=%s", fallback_error)
+        if isinstance(fallback_error, (RateLimitError, DailyLimitError)):
+            stats["rate_limit_hits"] += 1
+        return None, fallback_error, stats
 
 
 async def _mock_request(_: str, texts: Sequence[str]) -> List[str]:

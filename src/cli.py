@@ -127,10 +127,19 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     command = config["command"]
     if command == "extract":
+        logger.info("=" * 50)
+        logger.info("Extract Step")
+        logger.info("=" * 50)
         run_extract(settings)
     elif command == "translate":
+        logger.info("=" * 50)
+        logger.info("Translate Step")
+        logger.info("=" * 50)
         asyncio.run(run_translate(settings))
     else:
+        logger.info("=" * 50)
+        logger.info("Replace Step")
+        logger.info("=" * 50)
         run_replace(settings)
 
 

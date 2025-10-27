@@ -6,11 +6,12 @@ on:
       repository_url:
         description: "検証対象のリポジトリ URL"
         required: true
+        default: "https://github.com/microsoft/agent-framework"
         type: string
       subdirectory:
         description: "対象がモノレポの場合のサブディレクトリパス"
         required: false
-        default: ""
+        default: "python"
         type: string
       max_records:
         description: "翻訳する最大件数"
@@ -27,6 +28,11 @@ on:
         required: false
         default: ""
         type: string
+      artifact_dir:
+        description: "成果物を保存するディレクトリ"
+        required: false
+        default: "translated"
+        type: string
 
 jobs:
   translate-test:
@@ -42,21 +48,13 @@ jobs:
         run: uv sync --frozen
 
       - name: Clone target repository
-        id: clone
         run: |
           git clone --depth 1 "${{ inputs.repository_url }}" target-repo
-          if [ -n "${{ inputs.subdirectory }}" ]; then
-            echo "root=$PWD/target-repo/${{ inputs.subdirectory }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "root=$PWD/target-repo" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Extract content
-        env:
-          TARGET_ROOT: ${{ steps.clone.outputs.root }}
         run: |
           mkdir -p out
-          uv run python main.py extract "$TARGET_ROOT" \
+          uv run python main.py extract target-repo/${{ inputs.subdirectory }} \
             --output out/extracted.jsonl \
             --log-level INFO
 
@@ -68,42 +66,46 @@ jobs:
           cat out/token-summary.json
 
       - name: Run translation (test mode)
-        env:
-          TARGET_ROOT: ${{ steps.clone.outputs.root }}
         run: |
-          TRANSLATE_ARGS="--batch-size 5"
+          TRANSLATE_ARGS=("--batch-size" "5")
           if [ "${{ inputs.max_records }}" != "0" ]; then
-              TRANSLATE_ARGS="${TRANSLATE_ARGS} --limit ${{ inputs.max_records }}"
+              TRANSLATE_ARGS+=("--limit" "${{ inputs.max_records }}")
           fi
           if [ -n "${{ inputs.exclude_terms }}" ]; then
-              TRANSLATE_ARGS="${TRANSLATE_ARGS} --exclude-terms '${{ inputs.exclude_terms }}'"
+              TRANSLATE_ARGS+=("--exclude-terms" "${{ inputs.exclude_terms }}")
           fi
           if [[ "${{ inputs.mock_mode }}" == 'true' ]]; then
-              TRANSLATE_ARGS="${TRANSLATE_ARGS} --mock"
+              TRANSLATE_ARGS+=("--mock")
           fi
           uv run python main.py translate out/extracted.jsonl \
             --output out/translated.jsonl \
             --failed-output out/unprocessed.jsonl \
-            ${TRANSLATE_ARGS} \
+            "${TRANSLATE_ARGS[@]}" \
             --log-level INFO
 
       - name: Apply results (indirect)
-        env:
-          TARGET_ROOT: ${{ steps.clone.outputs.root }}
         run: |
           uv run python main.py replace out/translated.jsonl \
             --output-dir out/translated_sources \
-            --root "$TARGET_ROOT" \
+            --root target-repo/${{ inputs.subdirectory }} \
             --mode indirect \
             --log-level INFO
 
+      - name: Collect artifacts
+        run: |
+          mkdir -p ${{ inputs.artifact_dir }}
+          cp out/extracted.jsonl ${{ inputs.artifact_dir }}/
+          cp out/translated.jsonl ${{ inputs.artifact_dir }}/
+          cp out/unprocessed.jsonl ${{ inputs.artifact_dir }}/
+          cp out/token-summary.json ${{ inputs.artifact_dir }}/
+          cp -R out/translated_sources ${{ inputs.artifact_dir }}/
+          [ -f run.log ] && cp run.log ${{ inputs.artifact_dir }}/ || true
+          echo "Artifacts saved to: ${{ inputs.artifact_dir }}"
+          ls -R ${{ inputs.artifact_dir }}
+
       - name: Upload test artifacts
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: translation-test-results
-          path: |
-            out/extracted.jsonl
-            out/translated.jsonl
-            out/unprocessed.jsonl
-            out/translated_sources
-            run.log
+          path: ${{ inputs.artifact_dir }}

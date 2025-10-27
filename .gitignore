@@ -15,6 +15,7 @@ wheels/
 archive/*
 test_data/*
 translated_sources/*
+translated/*
 
 out/*
 extracted.jsonl

@@ -67,7 +67,7 @@ jobs:
 
       - name: Run translation (test mode)
         run: |
-          TRANSLATE_ARGS=("--batch-size" "5")
+          TRANSLATE_ARGS=()
           if [ "${{ inputs.max_records }}" != "0" ]; then
               TRANSLATE_ARGS+=("--limit" "${{ inputs.max_records }}")
           fi
@@ -88,7 +88,6 @@ jobs:
           uv run python main.py replace out/translated.jsonl \
             --output-dir out/translated_sources \
             --root target-repo/${{ inputs.subdirectory }} \
-            --mode indirect \
             --log-level INFO
 
       - name: Collect artifacts

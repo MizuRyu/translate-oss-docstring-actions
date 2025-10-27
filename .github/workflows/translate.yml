@@ -33,11 +33,6 @@ on:
         required: false
         default: ""
         type: string
-      batch_size:
-        description: "翻訳時のバッチサイズ"
-        required: false
-        default: 5
-        type: number
       push_results:
         description: "翻訳結果をリポジトリにpushする"
         required: false
@@ -189,7 +184,7 @@ jobs:
           API_VERSION: ${{ secrets.API_VERSION }}
         run: |
           mkdir -p out
-          TRANSLATE_ARGS=("--batch-size" "${{ inputs.batch_size }}")
+          TRANSLATE_ARGS=()
           if [ "${{ inputs.translation_limit }}" != "0" ]; then
               TRANSLATE_ARGS+=("--limit" "${{ inputs.translation_limit }}")
           fi
@@ -210,7 +205,6 @@ jobs:
           uv run python main.py replace out/translated.jsonl \
             --output-dir out/translated_sources \
             --root target-repo/${{ inputs.subdirectory }} \
-            --mode indirect \
             --log-level INFO
           if [ -d out/translated_sources ]; then
             rsync -av --ignore-existing out/translated_sources/ target-repo/${{ inputs.subdirectory }}/

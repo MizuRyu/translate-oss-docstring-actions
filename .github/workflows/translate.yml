@@ -114,8 +114,8 @@ jobs:
             --input out/extracted.jsonl \
             --output out/token-summary.json
 
-          # GitHub Outputに保存
-          SUMMARY=$(cat out/token-summary.json)
+          # GitHub Outputに保存（JSONを1行に圧縮）
+          SUMMARY=$(jq -c '.' out/token-summary.json)
           echo "json=$SUMMARY" >> "$GITHUB_OUTPUT"
 
           # Step Summaryに詳細表示

@@ -38,29 +38,6 @@ on:
         required: false
         default: 5
         type: number
-      output_mode:
-        description: "ファイル出力モード (indirect/direct)"
-        required: false
-        default: "indirect"
-        type: choice
-        options:
-          - indirect
-          - direct
-      log_level:
-        description: "ログレベル (DEBUG/INFO/WARNING/ERROR)"
-        required: false
-        default: "INFO"
-        type: choice
-        options:
-          - DEBUG
-          - INFO
-          - WARNING
-          - ERROR
-      artifact_dir:
-        description: "成果物を保存するディレクトリ"
-        required: false
-        default: "translated"
-        type: string
       push_results:
         description: "翻訳結果をリポジトリにpushする"
         required: false
@@ -105,7 +82,7 @@ jobs:
           uv run python main.py extract target-repo/${{ inputs.subdirectory }} \
             --output out/extracted.jsonl \
             $ARGS \
-            --log-level ${{ inputs.log_level }}
+            --log-level INFO
 
       - name: Summarize token usage
         id: summary
@@ -219,30 +196,30 @@ jobs:
             --output out/translated.jsonl \
             --failed-output out/unprocessed.jsonl \
             "${TRANSLATE_ARGS[@]}" \
-            --log-level ${{ inputs.log_level }}
+            --log-level INFO
 
       - name: Apply translated content
         run: |
           uv run python main.py replace out/translated.jsonl \
             --output-dir out/translated_sources \
             --root target-repo/${{ inputs.subdirectory }} \
-            --mode ${{ inputs.output_mode }} \
-            --log-level ${{ inputs.log_level }}
+            --mode indirect \
+            --log-level INFO
           if [ -d out/translated_sources ]; then
             rsync -av --ignore-existing out/translated_sources/ target-repo/${{ inputs.subdirectory }}/
           fi
 
       - name: Collect artifacts
         run: |
-          mkdir -p ${{ inputs.artifact_dir }}
-          cp out/extracted.jsonl ${{ inputs.artifact_dir }}/
-          cp out/translated.jsonl ${{ inputs.artifact_dir }}/
-          cp out/unprocessed.jsonl ${{ inputs.artifact_dir }}/
-          cp out/token-summary.json ${{ inputs.artifact_dir }}/
-          cp -R out/translated_sources ${{ inputs.artifact_dir }}/
-          [ -f run.log ] && cp run.log ${{ inputs.artifact_dir }}/ || true
-          echo "Artifacts saved to: ${{ inputs.artifact_dir }}"
-          ls -R ${{ inputs.artifact_dir }}
+          mkdir -p translated
+          cp out/extracted.jsonl translated/
+          cp out/translated.jsonl translated/
+          cp out/unprocessed.jsonl translated/
+          cp out/token-summary.json translated/
+          cp -R out/translated_sources translated/
+          [ -f run.log ] && cp run.log translated/ || true
+          echo "Artifacts saved to: translated"
+          ls -R translated
 
       - name: Commit and push results (GitHub only)
         if: ${{ !env.ACT && inputs.push_results }}
@@ -252,14 +229,14 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           # 翻訳結果をコミット
-          git add ${{ inputs.artifact_dir }}
+          git add translated
 
           # 変更があればコミット
           if git diff --staged --quiet; then
             echo "変更なし - コミットをスキップ"
           else
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            ITEMS=$(jq '.items // (.items | length?)' ${{ inputs.artifact_dir }}/token-summary.json)
+            ITEMS=$(jq '.items // (.items | length?)' translated/token-summary.json)
             git commit -m "chore(translation): 翻訳結果を追加" \
               -m "Repository: ${{ inputs.repository_url }}" \
               -m "Subdirectory: ${{ inputs.subdirectory }}" \
@@ -274,4 +251,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: translation-results
-          path: ${{ inputs.artifact_dir }}
+          path: translated

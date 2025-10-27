@@ -4,22 +4,32 @@ on:
   workflow_dispatch:
     inputs:
       repository_url:
-        description: "翻訳対象のリポジトリ URL (サブディレクトリの場合はその URL)"
+        description: "翻訳対象のリポジトリ URL"
         required: true
         default: "https://github.com/microsoft/agent-framework"
         type: string
       subdirectory:
-        description: "対象がモノレポの場合のサブディレクトリパス (../ や絶対パス不可)"
+        description: "対象がモノレポの場合のサブディレクトリパス"
         required: false
         default: "python"
         type: string
+      translation_limit:
+        description: "翻訳件数の上限 (0で無制限)"
+        required: false
+        default: 10
+        type: number
+      mock_mode:
+        description: "モックモードで実行（LLM呼び出しをスキップ）"
+        required: false
+        default: false
+        type: boolean
       include_log_messages:
-        description: "logger / print も抽出対象に含める"
+        description: "logger/printも抽出対象に含める"
         required: false
         default: false
         type: boolean
       exclude_terms:
-        description: "和訳の対象から除外する単語群（自然言語で指定）"
+        description: "和訳から除外する単語群（自然言語で指定）"
         required: false
         default: ""
         type: string
@@ -28,16 +38,34 @@ on:
         required: false
         default: 5
         type: number
-      translation_limit:
-        description: "翻訳件数の上限 (文字列入力・'0' 指定で無制限)"
+      output_mode:
+        description: "ファイル出力モード (indirect/direct)"
         required: false
-        default: 10
-        type: number
+        default: "indirect"
+        type: choice
+        options:
+          - indirect
+          - direct
+      log_level:
+        description: "ログレベル (DEBUG/INFO/WARNING/ERROR)"
+        required: false
+        default: "INFO"
+        type: choice
+        options:
+          - DEBUG
+          - INFO
+          - WARNING
+          - ERROR
       artifact_dir:
         description: "成果物を保存するディレクトリ"
         required: false
         default: "translated"
         type: string
+      push_results:
+        description: "翻訳結果をリポジトリにpushする"
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   prepare:
@@ -77,7 +105,7 @@ jobs:
           uv run python main.py extract target-repo/${{ inputs.subdirectory }} \
             --output out/extracted.jsonl \
             $ARGS \
-            --log-level INFO
+            --log-level ${{ inputs.log_level }}
 
       - name: Summarize token usage
         id: summary
@@ -184,19 +212,22 @@ jobs:
           if [ -n "${{ inputs.exclude_terms }}" ]; then
               TRANSLATE_ARGS+=("--exclude-terms" "${{ inputs.exclude_terms }}")
           fi
+          if [[ "${{ inputs.mock_mode }}" == 'true' ]]; then
+              TRANSLATE_ARGS+=("--mock")
+          fi
           uv run python main.py translate out/extracted.jsonl \
             --output out/translated.jsonl \
             --failed-output out/unprocessed.jsonl \
             "${TRANSLATE_ARGS[@]}" \
-            --log-level INFO
+            --log-level ${{ inputs.log_level }}
 
       - name: Apply translated content
         run: |
           uv run python main.py replace out/translated.jsonl \
             --output-dir out/translated_sources \
             --root target-repo/${{ inputs.subdirectory }} \
-            --mode indirect \
-            --log-level INFO
+            --mode ${{ inputs.output_mode }} \
+            --log-level ${{ inputs.log_level }}
           if [ -d out/translated_sources ]; then
             rsync -av --ignore-existing out/translated_sources/ target-repo/${{ inputs.subdirectory }}/
           fi
@@ -214,7 +245,7 @@ jobs:
           ls -R ${{ inputs.artifact_dir }}
 
       - name: Commit and push results (GitHub only)
-        if: ${{ !env.ACT }}
+        if: ${{ !env.ACT && inputs.push_results }}
         run: |
           # Git設定
           git config --global user.name "github-actions[bot]"

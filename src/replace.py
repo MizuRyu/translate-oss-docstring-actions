@@ -33,7 +33,9 @@ def run(settings: Dict[str, Any]) -> None:
         grouped.setdefault(Path(record["path"]).resolve(), []).append(record)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    for path, items in grouped.items():
+    total_files = len(grouped)
+    for index, (path, items) in enumerate(grouped.items(), start=1):
+        logger.info("[Replace] %d/%d %s", index, total_files, path)
         translated = _apply_to_file(path, items)
         relative = _relative_path(path, root)
         target = output_dir / relative

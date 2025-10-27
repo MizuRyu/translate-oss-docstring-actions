@@ -35,8 +35,10 @@ def run(settings: Dict[str, Any]) -> None:
     start = perf_counter()
     stats = {"files": len(python_files), "files_with_items": 0, "items": 0, "tokens": 0, "chars": 0}
 
+    total_files = len(python_files)
     with output_path.open("w", encoding="utf-8") as handle:
-        for path in python_files:
+        for index, path in enumerate(python_files, start=1):
+            logger.info("[Extract] %d/%d %s", index, total_files, path.relative_to(root))
             source = path.read_text(encoding="utf-8")
             entries = _extract_from_file(source, path, include_log, verbose)
             if entries:

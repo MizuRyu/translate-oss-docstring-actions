@@ -100,7 +100,8 @@ async def run(settings: Dict[str, Any]) -> None:
 
     tasks: List[asyncio.Task] = []
     async with asyncio.TaskGroup() as tg:
-        for batch in batches:
+        for index, batch in enumerate(batches, start=1):
+            logger.info("[Translate] バッチ %d/%d (件数=%d)", index, len(batches), len(batch))
             task = tg.create_task(
                 translate_batch(
                     cfg["system_prompt"],

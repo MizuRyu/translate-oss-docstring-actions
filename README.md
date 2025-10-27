@@ -43,7 +43,7 @@ libcst を利用して Python ファイルから docstring / コメント / ロ�
      --log-level INFO
    ```
 
-   - `--mock` を付けると LLM を呼び出さずに `(mock)` を付けた結果を返し、`unprocessed.jsonl` には残さず完走します。
+   - `--mock` を付けると LLM を呼び出さずに `(mock)` を付けた結果を返し、`out/unprocessed.jsonl` には残さず完走します。
    - 実際の GitHub Models を利用する場合は `--mock` を外し、環境変数 `GITHUB_MODELS_ENDPOINT` / `GITHUB_TOKEN` / `GITHUB_MODELS_MODEL` を設定してください。レート制限に遭った場合は `AZURE_INFERENCE_ENDPOINT` / `AZURE_INFERENCE_CREDENTIAL` / `AZURE_INFERENCE_MODEL` が揃っていれば Azure Inference に自動フォールバックします。
    - トークン上限 (既定 2,500) を超えるエントリは即座に `out/unprocessed.jsonl` へ書き出され、警告ログが表示されます。
 
@@ -88,3 +88,35 @@ uv run python -m unittest \
 
 - コメントの差し戻しは原文ブロックを文字列置換しているため、翻訳後に元のコメントブロックがソースコード上から完全に消えている場合は置換できず警告が表示されます。
 - `translate` の Azure モードは構造化出力 (`response_format=json_schema`) を利用します。利用するエンドポイントが `2024-08-01-preview` 以降の API バージョンに対応していることをご確認ください。
+
+## GitHub Actions
+
+- 本番ワークフロー `.github/workflows/translate.yml` は `translation-approval` という environment 承認を前提にしています。Workflow 実行前にリポジトリ設定から環境を作成し、承認者を設定してください。
+- ワークフローは「抽出→トークンサマリ提示→承認後に翻訳・反映」の順で進みます。Artifacts として `out/` 配下の JSONL やログをダウンロード可能です。指定した `artifact_dir`（既定値 `translated`）にも成果物がコピーされるため、ローカル実行後はリポジトリ直下のディレクトリを確認するだけで内容を把握できます。
+- 検証用の `.github/workflows/translate-test.yml` では、`mock_mode` や `max_records` を指定して安全に動作確認できます。`act` を利用したローカル実行時もこちらを使用するとスムーズです。
+
+### act での検証例
+
+actでローカル実行する場合、Makefileを利用すると便利です：
+
+```bash
+make translate-test
+```
+
+または、直接actコマンドで実行：
+
+```bash
+act workflow_dispatch \
+  -W .github/workflows/translate-test.yml \
+  --container-architecture linux/amd64 \
+  --bind \
+  --input repository_url=https://github.com/microsoft/agent-framework.git \
+  --input subdirectory=python \
+  --input max_records=5 \
+  --input mock_mode=true \
+  --input artifact_dir=translated
+```
+
+**重要**: `--bind`オプションを指定することで、コンテナ内で生成された成果物がローカルの`translated/`ディレクトリに保存されます。
+
+実行後、`translated/` 配下に `extracted.jsonl`, `translated.jsonl`, `unprocessed.jsonl`, `token-summary.json`, および `translated_sources/` などが保存されます。必要に応じて `git status` を確認して差分をレビューしてください。

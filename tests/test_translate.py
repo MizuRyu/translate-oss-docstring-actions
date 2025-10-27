@@ -37,7 +37,7 @@ class TranslateDummyTests(unittest.TestCase):
                         "input": str(input_path),
                         "output": str(output_path),
                         "failed_output": str(failed_path),
-                        "mock_mode": True,
+                        "is_mock": True,
                         "batch_size": 2,
                         "system_prompt": "test",
                     }

@@ -50,7 +50,7 @@ class PipelineScenarioTests(unittest.TestCase):
                         "input": str(extracted),
                         "output": str(translated),
                         "failed_output": str(failed),
-                        "mock_mode": True,
+                        "is_mock": True,
                         "batch_size": 4,
                         "system_prompt": "test",
                     }

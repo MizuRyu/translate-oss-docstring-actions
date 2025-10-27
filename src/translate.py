@@ -28,7 +28,7 @@ async def run(settings: Dict[str, Any]) -> None:
         "limit": settings.get("limit"),
         "system_prompt": settings.get("system_prompt", DEFAULT_PROMPT),
         "batch_size": settings.get("batch_size") or 5,
-        "mock_mode": bool(settings.get("mock_mode", False)),
+        "is_mock": bool(settings.get("is_mock", False)),
     }
 
     entries = _load_entries(cfg["input_path"], cfg["limit"])
@@ -59,7 +59,7 @@ async def run(settings: Dict[str, Any]) -> None:
                 translate_batch(
                     cfg["system_prompt"],
                     batch,
-                    mock_mode=cfg["mock_mode"],
+                    is_mock=cfg["is_mock"],
                 )
             )
             tasks.append(task)

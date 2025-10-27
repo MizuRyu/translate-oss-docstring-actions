@@ -5,8 +5,9 @@ import json
 import os
 import time
 from collections import deque
+from contextlib import asynccontextmanager
 from datetime import date
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple
 
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import JsonSchemaFormat, SystemMessage, UserMessage
@@ -57,6 +58,45 @@ class TranslationRequest(BaseModel):
     items: List[TranslationRequestItem]
 
 
+class GithubModelPolicy(NamedTuple):
+    rpm: Optional[int]
+    rpd: Optional[int]
+    concurrency: Optional[int]
+
+
+_GITHUB_MODEL_POLICIES: Dict[str, GithubModelPolicy] = {
+    "openai/gpt-4.1-mini": GithubModelPolicy(rpm=15, rpd=150, concurrency=5),
+    "openai/gpt-4.1": GithubModelPolicy(rpm=10, rpd=150, concurrency=2),
+}
+
+
+class ConcurrencyLimiter:
+    """GitHubモデルの同時実行数を管理するセマフォラッパー"""
+
+    def __init__(self, max_concurrency: int) -> None:
+        if max_concurrency <= 0:
+            raise ValueError("max_concurrency must be positive")
+        self.limit = max_concurrency
+        self._semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def acquire(self) -> None:
+        await self._semaphore.acquire()
+
+    def release(self) -> None:
+        self._semaphore.release()
+
+    @asynccontextmanager
+    async def slot(self):
+        await self.acquire()
+        try:
+            yield
+        finally:
+            self.release()
+
+
+_CONCURRENCY_LIMITERS: Dict[Tuple[str, asyncio.AbstractEventLoop], ConcurrencyLimiter] = {}
+
+
 def _init_stats() -> Dict[str, int]:
     """翻訳バッチで利用する統計情報の初期値を生成する"""
 
@@ -67,10 +107,33 @@ def _init_stats() -> Dict[str, int]:
         "timeouts": 0,
     }
 
+
+def _get_github_model_policy(model_name: str) -> GithubModelPolicy:
+    """GitHubモデルごとのレート上限と同時実行数を返す"""
+
+    try:
+        return _GITHUB_MODEL_POLICIES[model_name]
+    except KeyError as e:
+        raise TranslationRequestError(f"未対応のGitHubモデルです model={model_name}") from e
+
+
+def _get_concurrency_limiter(
+    model_name: str, limit: Optional[int]
+) -> Optional[ConcurrencyLimiter]:
+    if not limit or limit <= 0:
+        return None
+    loop = asyncio.get_running_loop()
+    key = (model_name, loop)
+    limiter = _CONCURRENCY_LIMITERS.get(key)
+    if limiter is None or limiter.limit != limit:
+        limiter = ConcurrencyLimiter(limit)
+        _CONCURRENCY_LIMITERS[key] = limiter
+    return limiter
+
 class RequestRateLimiter:
     """GitHubエンドポイント向けの単純なレートリミッタ。"""
 
-    def __init__(self, per_minute: int, per_day: int) -> None:
+    def __init__(self, per_minute: Optional[int], per_day: Optional[int]) -> None:
         self.per_minute = per_minute
         self.per_day = per_day
         self.events: deque[float] = deque()
@@ -87,6 +150,9 @@ class RequestRateLimiter:
         self._reset_if_needed()
         if self.per_day and self.daily_count >= self.per_day:
             raise DailyLimitError("GitHub daily request limit reached")
+        if not self.per_minute:
+            self.daily_count += 1
+            return
         while True:
             now = time.monotonic()
             while self.events and now - self.events[0] >= 60:
@@ -104,28 +170,37 @@ async def translate_batch(
     system_prompt: str,
     entries: Sequence[Dict[str, Any]],
     *,
-    mock_mode: bool = False,
+    is_mock: bool = False,
 ) -> Tuple[Optional[List[str]], Optional[Exception], Dict[str, int]]:
     stats = _init_stats()
 
     texts = [entry["text"] for entry in entries]
 
-    logger.debug("translate_batch entries=%d mock_mode=%s", len(texts), mock_mode)
+    logger.debug("translate_batch entries=%d is_mock=%s", len(texts), is_mock)
 
-    if mock_mode:
+    if is_mock:
         translations = await _mock_request(system_prompt, texts)
         return translations, None, stats
 
+    model_name = os.getenv("GITHUB_MODELS_MODEL", "openai/gpt-4.1-mini")
+    policy = _get_github_model_policy(model_name)
     primary_client = get_github_client()
-    primary_params = _get_model_config(os.getenv("GITHUB_MODELS_MODEL", "openai/gpt-4.1-mini"))
-    limiter = RequestRateLimiter(GITHUB_MODELS_RPM, GITHUB_MODELS_DAILY)
+    primary_params = _get_model_config(model_name)
+    request_limiter = RequestRateLimiter(policy.rpm, policy.rpd)
+    concurrency_limiter = _get_concurrency_limiter(model_name, policy.concurrency)
+
+    if concurrency_limiter is None:
+        raise TranslationRequestError(
+            f"GitHubモデルの同時実行数が未設定です model={model_name}"
+        )
 
     try:
-        await limiter.acquire()
-        translations = await asyncio.wait_for(
-            _invoke_client(primary_client, primary_params, system_prompt, texts),
-            timeout=PRIMARY_TIMEOUT_SECONDS,
-        )
+        async with concurrency_limiter.slot():
+            await request_limiter.acquire()
+            translations = await asyncio.wait_for(
+                _invoke_client(primary_client, primary_params, system_prompt, texts),
+                timeout=PRIMARY_TIMEOUT_SECONDS,
+            )
         stats["primary_requests"] += 1
         return translations, None, stats
     except asyncio.TimeoutError:

@@ -50,7 +50,7 @@ def create_parser() -> argparse.ArgumentParser:
     translate.add_argument("--failed-output", default="unprocessed.jsonl")
     translate.add_argument("--limit", type=int, default=None)
     translate.add_argument("--system-prompt-file", default=None)
-    translate.add_argument("--mock", action="store_true", dest="mock_mode", help="LLMを呼び出さずモックで翻訳する")
+    translate.add_argument("--mock", action="store_true", dest="is_mock", help="LLMを呼び出さずモックで翻訳する")
     translate.add_argument("--batch-size", type=int, default=5)
     translate.add_argument("--log-level", default="INFO")
 
@@ -94,7 +94,7 @@ def parse_args(argv: Optional[Sequence[str]]) -> Dict[str, Any]:
                 "limit": args.limit,
                 "system_prompt": prompt,
                 "batch_size": args.batch_size,
-                "mock_mode": args.mock_mode,
+                "is_mock": args.is_mock,
                 "log_level": args.log_level,
             },
         }

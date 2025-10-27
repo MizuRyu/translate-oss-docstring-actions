@@ -73,7 +73,6 @@ async def run(settings: Dict[str, Any]) -> None:
         "failed_output": Path(settings["failed_output"]).resolve(),
         "limit": settings.get("limit"),
         "system_prompt": settings.get("system_prompt", prompt_text),
-        "batch_size": settings.get("batch_size") or 5,
         "is_mock": bool(settings.get("is_mock", False)),
     }
 
@@ -87,7 +86,6 @@ async def run(settings: Dict[str, Any]) -> None:
     batches = _build_batches_within_token_limit(
         entries,
         cfg["system_prompt"],
-        cfg["batch_size"],
         cfg["failed_output"],
     )
 
@@ -212,10 +210,10 @@ def _write_failures(path: Path, items: Sequence[Dict[str, Any]]) -> None:
 def _build_batches_within_token_limit(
     entries: Sequence[Dict[str, Any]],
     system_prompt: str,
-    max_items: Optional[int],
     failed_output: Path,
     max_tokens: int = MAX_REQUEST_TOKENS,
 ) -> List[List[Dict[str, Any]]]:
+    """エントリーをtoken上限内でバッチ分割する"""
     system_prompt_tokens = count_tokens(system_prompt)
     batches: List[List[Dict[str, Any]]] = []
     current: List[Dict[str, Any]] = []
@@ -241,10 +239,7 @@ def _build_batches_within_token_limit(
                 failed_handle.write("\n")
             continue
 
-        should_flush = current and (
-            token_usage + tokens > max_tokens
-            or (max_items is not None and len(current) >= max_items)
-        )
+        should_flush = current and token_usage + tokens > max_tokens
 
         if should_flush:
             batches.append(current)

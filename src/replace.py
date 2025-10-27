@@ -19,9 +19,6 @@ def run(settings: Dict[str, Any]) -> None:
     input_path = Path(settings["input"]).resolve()
     output_dir = Path(settings["output_dir"]).resolve()
     root = Path(settings["root"]).resolve()
-    mode = settings.get("mode", "indirect")
-    if mode != "indirect":
-        raise NotImplementedError("direct モードは未実装です")
 
     records = _load_records(input_path)
     if not records:

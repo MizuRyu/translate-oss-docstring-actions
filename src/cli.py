@@ -54,7 +54,6 @@ def create_parser() -> argparse.ArgumentParser:
     translate.add_argument("--system-prompt-file", default=None)
     translate.add_argument("--exclude-terms", default=None)
     translate.add_argument("--mock", action="store_true", dest="is_mock", help="LLMを呼び出さずモックで翻訳する")
-    translate.add_argument("--batch-size", type=int, default=5)
     translate.add_argument("--log-level", default="INFO")
 
     # replace
@@ -62,7 +61,6 @@ def create_parser() -> argparse.ArgumentParser:
     apply.add_argument("input")
     apply.add_argument("--output-dir", default="out/translated_sources")
     apply.add_argument("--root", default=".")
-    apply.add_argument("--mode", default="indirect")
     apply.add_argument("--log-level", default="INFO")
 
     return parser
@@ -99,7 +97,6 @@ def parse_args(argv: Optional[Sequence[str]]) -> Dict[str, Any]:
                 "limit": args.limit,
                 "system_prompt": prompt,
                 "exclude_terms": args.exclude_terms,
-                "batch_size": args.batch_size,
                 "is_mock": args.is_mock,
                 "log_level": args.log_level,
             },
@@ -110,7 +107,6 @@ def parse_args(argv: Optional[Sequence[str]]) -> Dict[str, Any]:
             "input": Path(args.input).resolve(),
             "output_dir": Path(args.output_dir).resolve(),
             "root": Path(args.root).resolve(),
-            "mode": args.mode,
             "log_level": args.log_level,
         },
     }

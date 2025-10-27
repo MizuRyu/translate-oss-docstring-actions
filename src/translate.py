@@ -15,6 +15,7 @@ from llm import (
     REQUEST_OVERHEAD_TOKENS,
     translate_batch,
 )
+from log_utils import log_progress, log_stage_start, log_summary
 from util import count_tokens, logger
 
 load_dotenv()
@@ -92,6 +93,8 @@ async def run(settings: Dict[str, Any]) -> None:
     cfg["output_path"].parent.mkdir(parents=True, exist_ok=True)
     cfg["failed_output"].parent.mkdir(parents=True, exist_ok=True)
 
+    log_stage_start("Translate", f"Items: {len(entries)}, Batches: {len(batches)}")
+
     start = perf_counter()
     success_count = 0
     failure_items: List[Dict[str, Any]] = []
@@ -99,7 +102,8 @@ async def run(settings: Dict[str, Any]) -> None:
     tasks: List[asyncio.Task] = []
     async with asyncio.TaskGroup() as tg:
         for index, batch in enumerate(batches, start=1):
-            logger.info("[Translate] バッチ %d/%d (件数=%d)", index, len(batches), len(batch))
+            detail = f"{len(batch)} items"
+            log_progress("Translate", index, len(batches), f"Batch {index}", detail)
             task = tg.create_task(
                 translate_batch(
                     cfg["system_prompt"],
@@ -174,16 +178,18 @@ async def run(settings: Dict[str, Any]) -> None:
     fallback_requests = stats.get("fallback_requests", 0)
     rate_hits = stats.get("rate_limit_hits", 0)
     timeouts = stats.get("timeouts", 0)
-    logger.info(
-        "\nSuccess: %d\nFailed: %d\nLLM Requests Count: %d\nFallback Count: %d\nRate Limits Count: %d\nTimeouts Count: %d\nDuration: %.3f秒",
-        success_count,
-        len(failure_items),
-        primary_requests + fallback_requests,
-        fallback_requests,
-        rate_hits,
-        timeouts,
-        duration,
-    )
+    
+    log_summary("Translate", {
+        "Total Items": len(entries),
+        "Success": success_count,
+        "Failed": len(failure_items),
+        "Batches": len(batches),
+        "LLM Requests": primary_requests + fallback_requests,
+        "Fallback Count": fallback_requests,
+        "Rate Limits": rate_hits,
+        "Timeouts": timeouts,
+        "Duration": f"{duration:.3f}s",
+    })
 
 
 def _load_entries(path: Path, limit: Optional[int]) -> List[Dict[str, Any]]:

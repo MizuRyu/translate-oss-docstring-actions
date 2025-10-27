@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import libcst as cst
 from libcst import metadata
 
+from log_utils import log_progress, log_stage_start, log_summary
 from util import count_tokens, logger
 
 
@@ -27,10 +28,7 @@ def run(settings: Dict[str, Any]) -> None:
         return
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(
-        "\nExtract Start\nTarget Files: %d",
-        len(python_files),
-    )
+    log_stage_start("Extract", f"Target Files: {len(python_files)}")
 
     start = perf_counter()
     stats = {"files": len(python_files), "files_with_items": 0, "items": 0, "tokens": 0, "chars": 0}
@@ -38,7 +36,7 @@ def run(settings: Dict[str, Any]) -> None:
     total_files = len(python_files)
     with output_path.open("w", encoding="utf-8") as handle:
         for index, path in enumerate(python_files, start=1):
-            logger.info("[Extract] %d/%d %s", index, total_files, path.relative_to(root))
+            log_progress("Extract", index, total_files, str(path.relative_to(root)))
             source = path.read_text(encoding="utf-8")
             entries = _extract_from_file(source, path, include_log, verbose)
             if entries:
@@ -51,18 +49,14 @@ def run(settings: Dict[str, Any]) -> None:
                 stats["chars"] += len(entry["text"])
 
     duration = perf_counter() - start
-    summary = {
-        "target_files": stats["files"],
-        "files_with_extracted_items": stats["files_with_items"],
-        "items": stats["items"],
-        "total_tokens": stats["tokens"],
-        "total_chars": stats["chars"],
-        "execution_time_sec": round(duration, 3),
-    }
-    logger.info(
-        "\nExtract Complete\n%s",
-        json.dumps(summary, ensure_ascii=False),
-    )
+    log_summary("Extract", {
+        "Target Files": stats["files"],
+        "Files with Items": stats["files_with_items"],
+        "Extracted Items": stats["items"],
+        "Total Tokens": f"{stats['tokens']:,}",
+        "Total Characters": f"{stats['chars']:,}",
+        "Duration": f"{duration:.3f}s",
+    })
 
 
 def _glob_python_files(root: Path, excludes: Sequence[str]) -> List[Path]:

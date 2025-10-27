@@ -5,11 +5,13 @@ import json
 import re
 import textwrap
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, Iterable, List
 
 import libcst as cst
 from libcst import metadata
 
+from log_utils import log_progress, log_stage_start, log_summary
 from util import logger
 
 
@@ -31,21 +33,38 @@ def run(settings: Dict[str, Any]) -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     total_files = len(grouped)
+    total_items = len(records)
+    
+    log_stage_start("Replace", f"Files: {total_files}, Items: {total_items}")
+    
+    start = perf_counter()
+    total_docstrings = 0
+    total_comments = 0
+    
     for index, (path, items) in enumerate(grouped.items(), start=1):
-        logger.info("[Replace] %d/%d %s", index, total_files, path)
+        docstrings = sum(1 for item in items if item["kind"].endswith("docstring"))
+        comments = sum(1 for item in items if item["kind"] == "comment")
+        detail = f"{docstrings} docstrings, {comments} comments"
+        log_progress("Replace", index, total_files, str(path.name), detail)
+        
         translated = _apply_to_file(path, items)
         relative = _relative_path(path, root)
         target = output_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(translated, encoding="utf-8")
-        docstrings = sum(1 for item in items if item["kind"].endswith("docstring"))
-        comments = sum(1 for item in items if item["kind"] == "comment")
-        logger.info(
-            "\nGenerated Complete\nPath: %s\nDocstrings: %d\nComments: %d",
-            relative,
-            docstrings,
-            comments,
-        )
+        
+        total_docstrings += docstrings
+        total_comments += comments
+    
+    duration = perf_counter() - start
+    log_summary("Replace", {
+        "Total Files": total_files,
+        "Total Items": total_items,
+        "Docstrings": total_docstrings,
+        "Comments": total_comments,
+        "Output Directory": str(output_dir),
+        "Duration": f"{duration:.3f}s",
+    })
 
 
 def _load_records(path: Path) -> List[Dict[str, Any]]:

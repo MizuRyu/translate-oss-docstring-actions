@@ -33,6 +33,11 @@ on:
         required: false
         default: 0
         type: number
+      artifact_dir:
+        description: "成果物を保存するディレクトリ"
+        required: false
+        default: "translated"
+        type: string
 
 jobs:
   prepare:
@@ -51,7 +56,6 @@ jobs:
         run: uv sync --frozen
 
       - name: Clone target repository
-        id: clone
         run: |
           git clone --depth 1 "${{ inputs.repository_url }}" target-repo
           if [ -n "${{ inputs.subdirectory }}" ]; then
@@ -61,22 +65,16 @@ jobs:
                 exit 1
                 ;;
             esac
-            echo "root=$PWD/target-repo/${{ inputs.subdirectory }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "root=$PWD/target-repo" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract docstrings and comments
-        id: extract
-        env:
-          TARGET_ROOT: ${{ steps.clone.outputs.root }}
         run: |
           mkdir -p out
           ARGS=""
           if [[ "${{ inputs.include_log_messages }}" == 'true' ]]; then
             ARGS="${ARGS} --include-log-messages"
           fi
-          uv run python main.py extract "$TARGET_ROOT" \
+          uv run python main.py extract target-repo/${{ inputs.subdirectory }} \
             --output out/extracted.jsonl \
             $ARGS \
             --log-level INFO
@@ -90,7 +88,7 @@ jobs:
           SUMMARY=$(cat out/token-summary.json)
           echo "json=$SUMMARY" >> "$GITHUB_OUTPUT"
           printf "### トークンサマリ\n- 件数: %s\n- 総トークン: %s\n- 平均トークン: %.2f\n" \
-            "$(jq '.items | length? // .items' out/token-summary.json)" \
+            "$(jq '.items // (.items | length?)' out/token-summary.json)" \
             "$(jq '.tokens' out/token-summary.json)" \
             "$(jq '.average_tokens' out/token-summary.json)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -119,14 +117,8 @@ jobs:
         run: uv sync --frozen
 
       - name: Clone target repository
-        id: clone
         run: |
           git clone --depth 1 "${{ inputs.repository_url }}" target-repo
-          if [ -n "${{ inputs.subdirectory }}" ]; then
-            echo "root=$PWD/target-repo/${{ inputs.subdirectory }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "root=$PWD/target-repo" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Download extraction artifact
         uses: actions/download-artifact@v4
@@ -139,8 +131,6 @@ jobs:
           cat out/token-summary.json | jq
 
       - name: Run translation
-        env:
-          TARGET_ROOT: ${{ steps.clone.outputs.root }}
         run: |
           mkdir -p out
           TRANSLATE_ARGS=("--batch-size" "${{ inputs.batch_size }}")
@@ -157,25 +147,31 @@ jobs:
             --log-level INFO
 
       - name: Apply translated content
-        env:
-          TARGET_ROOT: ${{ steps.clone.outputs.root }}
         run: |
           uv run python main.py replace out/translated.jsonl \
             --output-dir out/translated_sources \
-            --root "$TARGET_ROOT" \
+            --root target-repo/${{ inputs.subdirectory }} \
             --mode indirect \
             --log-level INFO
           if [ -d out/translated_sources ]; then
-            rsync -av --ignore-existing out/translated_sources/ "$TARGET_ROOT"/
+            rsync -av --ignore-existing out/translated_sources/ target-repo/${{ inputs.subdirectory }}/
           fi
 
+      - name: Collect artifacts
+        run: |
+          mkdir -p ${{ inputs.artifact_dir }}
+          cp out/extracted.jsonl ${{ inputs.artifact_dir }}/
+          cp out/translated.jsonl ${{ inputs.artifact_dir }}/
+          cp out/unprocessed.jsonl ${{ inputs.artifact_dir }}/
+          cp out/token-summary.json ${{ inputs.artifact_dir }}/
+          cp -R out/translated_sources ${{ inputs.artifact_dir }}/
+          [ -f run.log ] && cp run.log ${{ inputs.artifact_dir }}/ || true
+          echo "Artifacts saved to: ${{ inputs.artifact_dir }}"
+          ls -R ${{ inputs.artifact_dir }}
+
       - name: Upload translation artifacts
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: translation-results
-          path: |
-            out/translated.jsonl
-            out/unprocessed.jsonl
-            out/translated_sources
-            out/token-summary.json
-            run.log
+          path: ${{ inputs.artifact_dir }}

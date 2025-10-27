@@ -1,0 +1,181 @@
+name: Translate Repository Content
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository_url:
+        description: "翻訳対象のリポジトリ URL (サブディレクトリの場合はその URL)"
+        required: true
+        default: "https://github.com/microsoft/agent-framework"
+        type: string
+      subdirectory:
+        description: "対象がモノレポの場合のサブディレクトリパス (../ や絶対パス不可)"
+        required: false
+        default: "python"
+        type: string
+      include_log_messages:
+        description: "logger / print も抽出対象に含める"
+        required: false
+        default: false
+        type: boolean
+      exclude_terms:
+        description: "和訳の対象から除外する単語群（自然言語で指定）"
+        required: false
+        default: ""
+        type: string
+      batch_size:
+        description: "翻訳時のバッチサイズ"
+        required: false
+        default: 5
+        type: number
+      translation_limit:
+        description: "翻訳件数の上限 (文字列入力・'0' 指定で無制限)"
+        required: false
+        default: 0
+        type: number
+
+jobs:
+  prepare:
+    name: Extract And Summarize
+    runs-on: ubuntu-latest
+    outputs:
+      token-summary: ${{ steps.summary.outputs.json }}
+    steps:
+      - name: Checkout comment-translator repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Clone target repository
+        id: clone
+        run: |
+          git clone --depth 1 "${{ inputs.repository_url }}" target-repo
+          if [ -n "${{ inputs.subdirectory }}" ]; then
+            case "${{ inputs.subdirectory }}" in
+              /*|*../*)
+                echo "Invalid subdirectory: ${{ inputs.subdirectory }}" >&2
+                exit 1
+                ;;
+            esac
+            echo "root=$PWD/target-repo/${{ inputs.subdirectory }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "root=$PWD/target-repo" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract docstrings and comments
+        id: extract
+        env:
+          TARGET_ROOT: ${{ steps.clone.outputs.root }}
+        run: |
+          mkdir -p out
+          ARGS=""
+          if [[ "${{ inputs.include_log_messages }}" == 'true' ]]; then
+            ARGS="${ARGS} --include-log-messages"
+          fi
+          uv run python main.py extract "$TARGET_ROOT" \
+            --output out/extracted.jsonl \
+            $ARGS \
+            --log-level INFO
+
+      - name: Summarize token usage
+        id: summary
+        run: |
+          uv run python scripts/summarize_tokens.py \
+            --input out/extracted.jsonl \
+            --output out/token-summary.json
+          SUMMARY=$(cat out/token-summary.json)
+          echo "json=$SUMMARY" >> "$GITHUB_OUTPUT"
+          printf "### トークンサマリ\n- 件数: %s\n- 総トークン: %s\n- 平均トークン: %.2f\n" \
+            "$(jq '.items | length? // .items' out/token-summary.json)" \
+            "$(jq '.tokens' out/token-summary.json)" \
+            "$(jq '.average_tokens' out/token-summary.json)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload extraction artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepare-artifacts
+          path: |
+            out/extracted.jsonl
+            out/token-summary.json
+            run.log
+
+  translate:
+    name: Translate And Apply
+    runs-on: ubuntu-latest
+    needs: prepare
+    environment: translation-approval
+    steps:
+      - name: Checkout comment-translator repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Clone target repository
+        id: clone
+        run: |
+          git clone --depth 1 "${{ inputs.repository_url }}" target-repo
+          if [ -n "${{ inputs.subdirectory }}" ]; then
+            echo "root=$PWD/target-repo/${{ inputs.subdirectory }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "root=$PWD/target-repo" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download extraction artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prepare-artifacts
+          path: out
+
+      - name: Show token summary
+        run: |
+          cat out/token-summary.json | jq
+
+      - name: Run translation
+        env:
+          TARGET_ROOT: ${{ steps.clone.outputs.root }}
+        run: |
+          mkdir -p out
+          TRANSLATE_ARGS=("--batch-size" "${{ inputs.batch_size }}")
+          if [ "${{ inputs.translation_limit }}" != "0" ]; then
+              TRANSLATE_ARGS+=("--limit" "${{ inputs.translation_limit }}")
+          fi
+          if [ -n "${{ inputs.exclude_terms }}" ]; then
+              TRANSLATE_ARGS+=("--exclude-terms" "${{ inputs.exclude_terms }}")
+          fi
+          uv run python main.py translate out/extracted.jsonl \
+            --output out/translated.jsonl \
+            --failed-output out/unprocessed.jsonl \
+            "${TRANSLATE_ARGS[@]}" \
+            --log-level INFO
+
+      - name: Apply translated content
+        env:
+          TARGET_ROOT: ${{ steps.clone.outputs.root }}
+        run: |
+          uv run python main.py replace out/translated.jsonl \
+            --output-dir out/translated_sources \
+            --root "$TARGET_ROOT" \
+            --mode indirect \
+            --log-level INFO
+          if [ -d out/translated_sources ]; then
+            rsync -av --ignore-existing out/translated_sources/ "$TARGET_ROOT"/
+          fi
+
+      - name: Upload translation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: translation-results
+          path: |
+            out/translated.jsonl
+            out/unprocessed.jsonl
+            out/translated_sources
+            out/token-summary.json
+            run.log

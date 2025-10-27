@@ -27,7 +27,8 @@ DEFAULT_EXCLUDE_TERMS = (
 )
 
 PROMPT_TEMPLATE = dedent(
-    """    あなたは、OSSの日本人コントリビューターであり、翻訳者です。
+    """\
+    あなたは、OSSの日本人コントリビューターであり、翻訳者です。
     ユーザーが提示した、英語で書かれたdocstringやコメントを、ルールに従い、日本語に翻訳してください。
     翻訳結果は、出力フォーマットに従い、JSON形式で出力してください。
 
@@ -62,7 +63,7 @@ async def run(settings: Dict[str, Any]) -> None:
 
     exclude_terms = settings.get("exclude_terms")
     if exclude_terms:
-        prompt_text = PROMPT_TEMPLATE.format(terms=str(exclude_terms))
+        prompt_text = PROMPT_TEMPLATE.format(terms=exclude_terms.strip())
     else:
         prompt_text = DEFAULT_PROMPT
 

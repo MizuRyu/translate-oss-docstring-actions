@@ -1,0 +1,109 @@
+name: Translate (Test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository_url:
+        description: "検証対象のリポジトリ URL"
+        required: true
+        type: string
+      subdirectory:
+        description: "対象がモノレポの場合のサブディレクトリパス"
+        required: false
+        default: ""
+        type: string
+      max_records:
+        description: "翻訳する最大件数"
+        required: false
+        default: 10
+        type: number
+      mock_mode:
+        description: "モックモードで翻訳する"
+        required: false
+        default: true
+        type: boolean
+      exclude_terms:
+        description: "和訳対象から除外したい単語群"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  translate-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout comment-translator repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Clone target repository
+        id: clone
+        run: |
+          git clone --depth 1 "${{ inputs.repository_url }}" target-repo
+          if [ -n "${{ inputs.subdirectory }}" ]; then
+            echo "root=$PWD/target-repo/${{ inputs.subdirectory }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "root=$PWD/target-repo" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract content
+        env:
+          TARGET_ROOT: ${{ steps.clone.outputs.root }}
+        run: |
+          mkdir -p out
+          uv run python main.py extract "$TARGET_ROOT" \
+            --output out/extracted.jsonl \
+            --log-level INFO
+
+      - name: Summarize tokens
+        run: |
+          uv run python scripts/summarize_tokens.py \
+            --input out/extracted.jsonl \
+            --output out/token-summary.json
+          cat out/token-summary.json
+
+      - name: Run translation (test mode)
+        env:
+          TARGET_ROOT: ${{ steps.clone.outputs.root }}
+        run: |
+          TRANSLATE_ARGS="--batch-size 5"
+          if [ "${{ inputs.max_records }}" != "0" ]; then
+              TRANSLATE_ARGS="${TRANSLATE_ARGS} --limit ${{ inputs.max_records }}"
+          fi
+          if [ -n "${{ inputs.exclude_terms }}" ]; then
+              TRANSLATE_ARGS="${TRANSLATE_ARGS} --exclude-terms '${{ inputs.exclude_terms }}'"
+          fi
+          if [[ "${{ inputs.mock_mode }}" == 'true' ]]; then
+              TRANSLATE_ARGS="${TRANSLATE_ARGS} --mock"
+          fi
+          uv run python main.py translate out/extracted.jsonl \
+            --output out/translated.jsonl \
+            --failed-output out/unprocessed.jsonl \
+            ${TRANSLATE_ARGS} \
+            --log-level INFO
+
+      - name: Apply results (indirect)
+        env:
+          TARGET_ROOT: ${{ steps.clone.outputs.root }}
+        run: |
+          uv run python main.py replace out/translated.jsonl \
+            --output-dir out/translated_sources \
+            --root "$TARGET_ROOT" \
+            --mode indirect \
+            --log-level INFO
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: translation-test-results
+          path: |
+            out/extracted.jsonl
+            out/translated.jsonl
+            out/unprocessed.jsonl
+            out/translated_sources
+            run.log

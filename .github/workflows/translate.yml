@@ -181,8 +181,8 @@ jobs:
 
       - name: Run translation
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_MODELS_ENDPOINT: ${{ secrets.GITHUB_MODELS_ENDPOINT }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_MODELS_ENDPOINT: ${{ secrets.GH_MODELS_ENDPOINT }}
           AZURE_INFERENCE_ENDPOINT: ${{ secrets.AZURE_INFERENCE_ENDPOINT }}
           AZURE_INFERENCE_CREDENTIAL: ${{ secrets.AZURE_INFERENCE_CREDENTIAL }}
           AZURE_INFERENCE_MODEL: ${{ secrets.AZURE_INFERENCE_MODEL }}

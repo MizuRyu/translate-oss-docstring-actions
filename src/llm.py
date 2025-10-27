@@ -407,8 +407,8 @@ def _get_model_config(model_name: str) -> Dict[str, Any]:
 def get_github_client() -> ChatCompletionsClient:
     """GitHub Models向けクライアントを生成する"""
 
-    endpoint = os.getenv("GITHUB_MODELS_ENDPOINT")
-    token = os.getenv("GITHUB_TOKEN")
+    endpoint = os.getenv("GH_MODELS_ENDPOINT")
+    token = os.getenv("GH_TOKEN")
     api_version = os.getenv("API_VERSION", "2024-10-01-preview")
     if not endpoint or not token:
         raise TranslationRequestError("GitHub Models の接続情報が不足しています")

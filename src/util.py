@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from functools import lru_cache
+from pathlib import Path
 
 import tiktoken
 
@@ -12,14 +13,23 @@ def init_logger() -> logging.Logger:
     level_name = os.getenv("LOG_LEVEL", "INFO").upper()
     logger = logging.getLogger("comment_translator")
     if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s %(levelname)s [%(name)s] %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            ),
+        formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
-        logger.addHandler(handler)
+
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+
+        log_path = Path("run.log")
+        try:
+            log_path.write_text("", encoding="utf-8")
+        except Exception:
+            pass
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
     logger.setLevel(logging._nameToLevel.get(level_name, logging.INFO))
     return logger
 

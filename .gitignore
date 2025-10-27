@@ -19,3 +19,5 @@ translated_sources/*
 extracted.jsonl
 translated.jsonl
 unprocessed.jsonl
+
+run.log

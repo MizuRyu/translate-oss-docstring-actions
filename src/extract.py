@@ -13,6 +13,8 @@ from util import count_tokens, logger
 
 
 def run(settings: Dict[str, Any]) -> None:
+    """抽出処理のエントリーポイント"""
+
     root = Path(settings["root"]).resolve()
     output_path = Path(settings["output"]).resolve()
     exclude_patterns: Sequence[str] = settings.get("exclude", [])  # type: ignore[assignment]
@@ -62,6 +64,8 @@ def run(settings: Dict[str, Any]) -> None:
 
 
 def _glob_python_files(root: Path, excludes: Sequence[str]) -> List[Path]:
+    """抽出対象となるPythonファイル一覧を取得する"""
+
     files: List[Path] = []
     for path in sorted(root.rglob("*.py")):
         if path.is_file() and not _is_excluded(path, root, excludes):
@@ -70,6 +74,8 @@ def _glob_python_files(root: Path, excludes: Sequence[str]) -> List[Path]:
 
 
 def _is_excluded(path: Path, root: Path, patterns: Sequence[str]) -> bool:
+    """除外パターンと一致するかどうかを判定する"""
+
     relative = path.relative_to(root)
     for pattern in patterns:
         if relative.match(pattern) or path.match(pattern):
@@ -83,6 +89,8 @@ def _extract_from_file(
     include_log: bool,
     verbose: bool,
 ) -> List[Dict[str, Any]]:
+    """単一ファイルから抽出レコードを生成する"""
+
     try:
         module = cst.parse_module(source)
     except cst.ParserSyntaxError as error:  # pragma: no cover
@@ -98,6 +106,8 @@ def _extract_from_file(
 
 
 class _Collector(cst.CSTVisitor):
+    """libcst訪問でdocstringやコメントを収集する"""
+
     METADATA_DEPENDENCIES = (metadata.PositionProvider,)
 
     def __init__(

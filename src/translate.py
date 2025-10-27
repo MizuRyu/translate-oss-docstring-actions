@@ -6,6 +6,8 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from textwrap import dedent
+
 from dotenv import load_dotenv
 
 from llm import (
@@ -17,16 +19,59 @@ from util import count_tokens, logger
 
 load_dotenv()
 
-DEFAULT_PROMPT = """あなたは、OSSの日本人コントリビューターであり、翻訳者です。\nユーザーが提示した、英語で書かれたdocstringやコメントを、ルールに従い、日本語に翻訳してください。\n翻訳結果は、出力フォーマットに従い、JSON形式で出力してください。\n\n### ルール\n- 固有名詞は翻訳せずに残してください。\n- 変数名やPythonの構文は翻訳しないでください。\n- docstring内の見出し（Examples など）は英語のままにしてください。\n- 以下の単語はカタカナや和訳にせず、そのまま英語で書いてください。\n  Agent, ID, Thread, Chat, Client, Class, Context, Import, Export, Key, Token, Secret, Config, Prompt, Request, Response, State, Message, Optional, None, Middleware, Executor\n\n### 出力フォーマット\n{\n  \"translations\": [\n    {\n      \"index\": <入力index>,\n      \"translation\": \"<翻訳結果>\"\n    }\n  ]\n}\n"""
+
+DEFAULT_EXCLUDE_TERMS = (
+    "Agent, ID, Thread, Chat, Client, Class, Context, Import, "
+    "Export, Key, Token, Secret, Config, Prompt, Request, Response, "
+    "State, Message, Optional, None, Middleware, Executor"
+)
+
+PROMPT_TEMPLATE = dedent(
+    """    あなたは、OSSの日本人コントリビューターであり、翻訳者です。
+    ユーザーが提示した、英語で書かれたdocstringやコメントを、ルールに従い、日本語に翻訳してください。
+    翻訳結果は、出力フォーマットに従い、JSON形式で出力してください。
+
+    ### ルール
+    - 固有名詞は翻訳せずに残してください。
+    - 変数名やPythonの構文は翻訳しないでください。
+    - docstring内の見出し（Examples など）は英語のままにしてください。
+    - 以下の単語はカタカナや和訳にせず、そのまま英語で書いてください。
+      {terms}
+
+    ### 出力フォーマット
+    {{
+      "translations": [
+        {{
+          "index": <入力index>,
+          "translation": "<翻訳結果>"
+        }}
+      ]
+    }}
+    """
+)
+
+DEFAULT_PROMPT = PROMPT_TEMPLATE.format(terms=DEFAULT_EXCLUDE_TERMS)
 
 
 async def run(settings: Dict[str, Any]) -> None:
+    """翻訳ジョブ全体を調整する。
+
+    Args:
+        settings: CLIから渡される設定辞書。
+    """
+
+    exclude_terms = settings.get("exclude_terms")
+    if exclude_terms:
+        prompt_text = PROMPT_TEMPLATE.format(terms=str(exclude_terms))
+    else:
+        prompt_text = DEFAULT_PROMPT
+
     cfg = {
         "input_path": Path(settings["input"]).resolve(),
         "output_path": Path(settings["output"]).resolve(),
         "failed_output": Path(settings["failed_output"]).resolve(),
         "limit": settings.get("limit"),
-        "system_prompt": settings.get("system_prompt", DEFAULT_PROMPT),
+        "system_prompt": settings.get("system_prompt", prompt_text),
         "batch_size": settings.get("batch_size") or 5,
         "is_mock": bool(settings.get("is_mock", False)),
     }

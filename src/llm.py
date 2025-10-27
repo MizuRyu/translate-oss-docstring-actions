@@ -120,6 +120,8 @@ def _get_github_model_policy(model_name: str) -> GithubModelPolicy:
 def _get_concurrency_limiter(
     model_name: str, limit: Optional[int]
 ) -> Optional[ConcurrencyLimiter]:
+    """モデル単位の並列数を管理するリミッタを取得する"""
+
     if not limit or limit <= 0:
         return None
     loop = asyncio.get_running_loop()
@@ -172,6 +174,8 @@ async def translate_batch(
     *,
     is_mock: bool = False,
 ) -> Tuple[Optional[List[str]], Optional[Exception], Dict[str, int]]:
+    """翻訳を1バッチ分実行し、結果と統計値を返す"""
+
     stats = _init_stats()
 
     texts = [entry["text"] for entry in entries]
@@ -252,7 +256,10 @@ async def translate_batch(
 
 
 async def _mock_request(_: str, texts: Sequence[str]) -> List[str]:
+    """モックモードの翻訳結果を生成する"""
+
     return [f"{text} (mock)" for text in texts]
+
 
 async def _invoke_client(
     client: ChatCompletionsClient,
@@ -260,6 +267,8 @@ async def _invoke_client(
     system_prompt: str,
     texts: Sequence[str],
 ) -> List[str]:
+    """LLMクライアントを呼び出しレスポンスを解析する"""
+
     payload = _build_payload(texts)
 
     def _call() -> Any:
@@ -298,6 +307,8 @@ async def _invoke_client(
 
 
 def _build_payload(texts: Sequence[str]) -> str:
+    """バッチ要求用のJSON文字列を構築する"""
+
     request = TranslationRequest(
         items=[
             TranslationRequestItem(index=index, original=text)
@@ -308,6 +319,8 @@ def _build_payload(texts: Sequence[str]) -> str:
 
 
 def _extract_content(response: Any) -> str:
+    """レスポンスオブジェクトから文字列を取り出す"""
+
     choice = response.choices[0]
     content = choice.message.content
     if isinstance(content, list):
@@ -318,6 +331,8 @@ def _extract_content(response: Any) -> str:
 
 
 def _parse(response_text: str) -> List[str]:
+    """JSONレスポンスを翻訳リストへ変換する"""
+
     try:
         model = TranslationResponse.model_validate_json(response_text)
         translations = sorted(model.translations, key=lambda item: item.index)
@@ -361,12 +376,16 @@ def _parse(response_text: str) -> List[str]:
 
 
 def _extract_usage_value(usage: Any, key: str) -> Optional[int]:
+    """usageオブジェクトから指定キーの数値を取得する"""
+
     if isinstance(usage, dict):
         return usage.get(key)
     return getattr(usage, key, None)
 
 
 def _validate_indexes(entries: Sequence[TranslationEntry]) -> None:
+    """インデックスが欠番なく並んでいるか検証する"""
+
     expected = list(range(len(entries)))
     actual = [entry.index for entry in entries]
     if actual != expected:
@@ -374,6 +393,7 @@ def _validate_indexes(entries: Sequence[TranslationEntry]) -> None:
 
 
 def _get_model_config(model_name: str) -> Dict[str, Any]:
+    """翻訳リクエスト用のパラメータを組み立てる"""
     # Codexさんへ。冗長かもですが、可読性を意識しているのでこのままにしてください。
     params = {}
     params["model"] = model_name
@@ -385,6 +405,8 @@ def _get_model_config(model_name: str) -> Dict[str, Any]:
 
 
 def get_github_client() -> ChatCompletionsClient:
+    """GitHub Models向けクライアントを生成する"""
+
     endpoint = os.getenv("GITHUB_MODELS_ENDPOINT")
     token = os.getenv("GITHUB_TOKEN")
     api_version = os.getenv("API_VERSION", "2024-10-01-preview")
@@ -398,6 +420,8 @@ def get_github_client() -> ChatCompletionsClient:
     )
 
 def get_azure_client() -> ChatCompletionsClient:
+    """Azure Inference向けクライアントを生成する"""
+
     endpoint = os.getenv("AZURE_INFERENCE_ENDPOINT")
     credential = os.getenv("AZURE_INFERENCE_CREDENTIAL")
     api_version = os.getenv("API_VERSION", "2024-10-01-preview")

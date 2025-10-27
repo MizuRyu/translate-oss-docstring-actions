@@ -15,6 +15,8 @@ from util import logger
 
 
 def create_parser() -> argparse.ArgumentParser:
+    """CLIエントリポイント用のパーサーを生成する"""
+
     parser = argparse.ArgumentParser(
         prog="comment-translator",
         description="libcst を利用した docstring / コメントの抽出・翻訳パイプライン",
@@ -66,6 +68,8 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def parse_args(argv: Optional[Sequence[str]]) -> Dict[str, Any]:
+    """引数を解析してサブコマンドごとの設定辞書を構築する"""
+
     parser = create_parser()
     args = parser.parse_args(argv)
     command = args.command or "extract"
@@ -111,6 +115,8 @@ def parse_args(argv: Optional[Sequence[str]]) -> Dict[str, Any]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
+    """CLIのエントリーポイント"""
+
     config = parse_args(argv)
     settings = dict(config["settings"])
     level = settings.pop("log_level", "INFO")

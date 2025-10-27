@@ -14,6 +14,8 @@ from util import logger
 
 
 def run(settings: Dict[str, Any]) -> None:
+    """翻訳結果をソースコードへ適用する"""
+
     input_path = Path(settings["input"]).resolve()
     output_dir = Path(settings["output_dir"]).resolve()
     root = Path(settings["root"]).resolve()
@@ -48,6 +50,8 @@ def run(settings: Dict[str, Any]) -> None:
 
 
 def _load_records(path: Path) -> List[Dict[str, Any]]:
+    """翻訳結果JSONLを読み込みリストで返す"""
+
     entries: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -58,6 +62,8 @@ def _load_records(path: Path) -> List[Dict[str, Any]]:
 
 
 def _apply_to_file(path: Path, records: List[Dict[str, Any]]) -> str:
+    """ファイル全体に翻訳結果を適用したコードを返す"""
+
     source = path.read_text(encoding="utf-8")
     module = cst.parse_module(source)
     wrapper = metadata.MetadataWrapper(module)
@@ -71,6 +77,8 @@ def _apply_to_file(path: Path, records: List[Dict[str, Any]]) -> str:
 
 
 def _build_docstring_mapping(records: Iterable[Dict[str, Any]]) -> Dict[tuple, Dict[str, str]]:
+    """docstring置換用のマッピングを構築する"""
+
     mapping: Dict[tuple, Dict[str, str]] = {}
     for record in records:
         if not record["kind"].endswith("docstring"):
@@ -87,6 +95,8 @@ def _build_docstring_mapping(records: Iterable[Dict[str, Any]]) -> Dict[tuple, D
 
 
 def _apply_docstrings(module: cst.Module, mapping: Dict[tuple, Dict[str, str]]) -> cst.Module:
+    """docstring置換を行ったCSTモジュールを返す"""
+
     class Transformer(cst.CSTTransformer):
         METADATA_DEPENDENCIES = (metadata.PositionProvider,)
 
@@ -122,6 +132,8 @@ def _apply_docstrings(module: cst.Module, mapping: Dict[tuple, Dict[str, str]]) 
 
 
 def _apply_comments(original_code: str, code: str, comments: Iterable[Dict[str, Any]]) -> str:
+    """コメントを翻訳済みに差し替える"""
+
     ordered = sorted(comments, key=_comment_sort_key)
     result = code
     search_index = 0
@@ -159,6 +171,8 @@ def _apply_comments(original_code: str, code: str, comments: Iterable[Dict[str, 
 
 
 def _comment_sort_key(record: Dict[str, Any]) -> tuple[int, int]:
+    """コメント適用順を決めるソートキー"""
+
     position = record.get("meta", {}).get("position", {})
     start = position.get("start", {})
     line = start.get("line", 0)
@@ -167,6 +181,8 @@ def _comment_sort_key(record: Dict[str, Any]) -> tuple[int, int]:
 
 
 def _format_comment_block(text: str, indent: str, width: int, trailing_newline: bool) -> str:
+    """ブロックコメントを整形して返す"""
+
     wrapper = textwrap.TextWrapper(width=width, break_long_words=False, break_on_hyphens=False)
     lines = wrapper.wrap(text) or [""]
     formatted = [f"{indent}# {line}" if line else f"{indent}#" for line in lines]
@@ -177,6 +193,8 @@ def _format_comment_block(text: str, indent: str, width: int, trailing_newline: 
 
 
 def _format_inline_line(original_line: str, translated: str) -> str:
+    """インラインコメント1行を翻訳結果に置き換える"""
+
     newline = ""
     if original_line.endswith("\n"):
         newline = "\n"
@@ -189,6 +207,8 @@ def _format_inline_line(original_line: str, translated: str) -> str:
 
 
 def _block_indent(block: str) -> str:
+    """コメントブロックのインデント文字列を抽出する"""
+
     for line in block.splitlines():
         if "#" in line:
             return line[: line.find("#")]
@@ -196,6 +216,8 @@ def _block_indent(block: str) -> str:
 
 
 def _relative_path(path: Path, root: Path) -> Path:
+    """出力ディレクトリに対する相対パスを計算する"""
+
     try:
         return path.relative_to(root)
     except ValueError:

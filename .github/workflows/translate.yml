@@ -129,7 +129,6 @@ jobs:
           path: |
             out/extracted.jsonl
             out/token-summary.json
-            run.log
 
   translate:
     name: Translate And Apply
@@ -218,7 +217,6 @@ jobs:
           cp out/unprocessed.jsonl translated/
           cp out/token-summary.json translated/
           cp -R out/translated_sources translated/
-          [ -f run.log ] && cp run.log translated/ || true
           echo "Artifacts saved to: translated"
           ls -R translated
 

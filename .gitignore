@@ -12,15 +12,17 @@ wheels/
 # environment variables
 .env
 
+# Generated files and logs
+*.log
+out/
+archives/
+translated/
+translated_sources/
+
+# Test/development artifacts
 archive/*
 test_data/*
-translated_sources/*
-translated/*
 target-repo/*
 
-out/*
-extracted.jsonl
-translated.jsonl
-unprocessed.jsonl
-
-run.log
+# Documentation (keep .context/ in git for planning)
+AGENTS.md

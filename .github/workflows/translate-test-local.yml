@@ -98,7 +98,6 @@ jobs:
           cp out/unprocessed.jsonl ${{ inputs.artifact_dir }}/
           cp out/token-summary.json ${{ inputs.artifact_dir }}/
           cp -R out/translated_sources ${{ inputs.artifact_dir }}/
-          [ -f run.log ] && cp run.log ${{ inputs.artifact_dir }}/ || true
           echo "Artifacts saved to: ${{ inputs.artifact_dir }}"
           ls -R ${{ inputs.artifact_dir }}
 

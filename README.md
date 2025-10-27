@@ -91,9 +91,58 @@ uv run python -m unittest \
 
 ## GitHub Actions
 
-- 本番ワークフロー `.github/workflows/translate.yml` は `translation-approval` という environment 承認を前提にしています。Workflow 実行前にリポジトリ設定から環境を作成し、承認者を設定してください。
-- ワークフローは「抽出→トークンサマリ提示→承認後に翻訳・反映」の順で進みます。Artifacts として `out/` 配下の JSONL やログをダウンロード可能です。指定した `artifact_dir`（既定値 `translated`）にも成果物がコピーされるため、ローカル実行後はリポジトリ直下のディレクトリを確認するだけで内容を把握できます。
-- 検証用の `.github/workflows/translate-test.yml` では、`mock_mode` や `max_records` を指定して安全に動作確認できます。`act` を利用したローカル実行時もこちらを使用するとスムーズです。
+### 環境設定（初回のみ）
+
+本番ワークフロー `.github/workflows/translate.yml` は `translation-approval` という environment 承認を前提にしています。
+
+**ghコマンドで設定（推奨）:**
+
+```bash
+# 1. 現在のユーザーIDを取得
+USER_ID=$(gh api user --jq '.id')
+
+# 2. translation-approval環境に承認者を設定
+gh api \
+  --method PUT \
+  repos/MizuRyu/translate-oss-docstring-actions/environments/translation-approval \
+  --input - << EOF
+{
+  "wait_timer": 0,
+  "reviewers": [
+    {
+      "type": "User",
+      "id": $USER_ID
+    }
+  ]
+}
+EOF
+
+# 3. 設定を確認
+gh api repos/MizuRyu/translate-oss-docstring-actions/environments/translation-approval \
+  | jq '.protection_rules[].reviewers[].reviewer.login'
+```
+
+**または、GitHub UIで設定:**
+
+1. GitHubリポジトリの Settings → Environments へアクセス
+2. `translation-approval` 環境をクリック
+3. "Required reviewers" で承認者を設定（自分自身でもOK）
+4. 保存
+
+この設定により、translate jobは承認されるまで実行待機状態になります。
+
+### ワークフロー実行
+
+- ワークフローは「抽出→トークンサマリ提示→**承認待ち**→翻訳・反映」の順で進みます
+- prepare jobが完了すると、トークン数サマリがStep Summaryに表示されます
+- translate jobは承認待ちになり、GitHub UIの "Review deployments" ボタンが表示されます
+- 承認後にのみ翻訳が実行されます
+- Artifacts として `out/` 配下の JSONL やログをダウンロード可能です
+- 指定した `artifact_dir`（既定値 `translated`）にも成果物がコピーされます
+
+### テストワークフロー
+
+検証用の `.github/workflows/translate-test-local.yml` では、`mock_mode` や `max_records` を指定して安全に動作確認できます。`act` を利用したローカル実行時もこちらを使用するとスムーズです。
 
 ### act での検証例
 

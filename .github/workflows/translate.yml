@@ -1,4 +1,4 @@
-name: Translate Repository Content
+name: Translate Repository Content (Production)
 
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ on:
       translation_limit:
         description: "翻訳件数の上限 (文字列入力・'0' 指定で無制限)"
         required: false
-        default: 0
+        default: 10
         type: number
       artifact_dir:
         description: "成果物を保存するディレクトリ"
@@ -85,12 +85,42 @@ jobs:
           uv run python scripts/summarize_tokens.py \
             --input out/extracted.jsonl \
             --output out/token-summary.json
+          
+          # GitHub Outputに保存
           SUMMARY=$(cat out/token-summary.json)
           echo "json=$SUMMARY" >> "$GITHUB_OUTPUT"
-          printf "### トークンサマリ\n- 件数: %s\n- 総トークン: %s\n- 平均トークン: %.2f\n" \
-            "$(jq '.items // (.items | length?)' out/token-summary.json)" \
-            "$(jq '.tokens' out/token-summary.json)" \
-            "$(jq '.average_tokens' out/token-summary.json)" >> "$GITHUB_STEP_SUMMARY"
+          
+          # Step Summaryに詳細表示
+          ITEMS=$(jq '.items // (.items | length?)' out/token-summary.json)
+          TOKENS=$(jq '.tokens' out/token-summary.json)
+          AVG_TOKENS=$(jq '.average_tokens' out/token-summary.json)
+          MAX_TOKENS=$(jq '.max_tokens // 0' out/token-summary.json)
+          MIN_TOKENS=$(jq '.min_tokens // 0' out/token-summary.json)
+          
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## 📊 トークン使用量サマリ
+          
+          | 項目 | 値 |
+          |------|------|
+          | 抽出件数 | **${ITEMS}件** |
+          | 総トークン数 | **${TOKENS}** |
+          | 平均トークン数 | **${AVG_TOKENS}** |
+          | 最大トークン数 | ${MAX_TOKENS} |
+          | 最小トークン数 | ${MIN_TOKENS} |
+          
+          > ⚠️ 次のステップで翻訳を実行します。承認が必要です。
+          EOF
+          
+          # コンソールにも表示
+          echo "============================================"
+          echo "📊 トークン使用量サマリ"
+          echo "============================================"
+          echo "抽出件数: ${ITEMS}件"
+          echo "総トークン数: ${TOKENS}"
+          echo "平均トークン数: ${AVG_TOKENS}"
+          echo "最大トークン数: ${MAX_TOKENS}"
+          echo "最小トークン数: ${MIN_TOKENS}"
+          echo "============================================"
 
       - name: Upload extraction artifacts
         uses: actions/upload-artifact@v4
@@ -128,7 +158,21 @@ jobs:
 
       - name: Show token summary
         run: |
-          cat out/token-summary.json | jq
+          echo "============================================"
+          echo "📊 翻訳前のトークン確認"
+          echo "============================================"
+          cat out/token-summary.json | jq -r '
+            "抽出件数: \(.items // (.items | length?))件",
+            "総トークン数: \(.tokens)",
+            "平均トークン数: \(.average_tokens)",
+            "最大トークン数: \(.max_tokens // 0)",
+            "最小トークン数: \(.min_tokens // 0)"
+          '
+          echo "============================================"
+          echo ""
+          echo "⚠️  このジョブは environment: translation-approval で保護されています"
+          echo "⚠️  翻訳を実行するには GitHub UI で承認が必要です"
+          echo ""
 
       - name: Run translation
         run: |

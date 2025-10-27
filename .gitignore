@@ -20,7 +20,6 @@ translated/
 translated_sources/
 
 # Test/development artifacts
-archive/*
 test_data/*
 target-repo/*
 

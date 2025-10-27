@@ -25,15 +25,24 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="サマリを書き出す JSON ファイルのパス",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="翻訳件数の上限（translation_limit）",
+    )
     return parser.parse_args()
 
 
-def summarize_tokens(input_path: Path) -> dict[str, float]:
+def summarize_tokens(input_path: Path, limit: int | None = None) -> dict[str, float | int]:
     """JSONLファイルからトークンサマリを計算する"""
 
     items = 0
     tokens = 0
     chars = 0
+    limited_tokens = 0
+    limited_chars = 0
+    
     with input_path.open(encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
@@ -41,15 +50,29 @@ def summarize_tokens(input_path: Path) -> dict[str, float]:
                 continue
             record = json.loads(line)
             text = record.get("text", "")
-            tokens += count_tokens(text)
-            chars += len(text)
+            item_tokens = count_tokens(text)
+            item_chars = len(text)
+            
+            tokens += item_tokens
+            chars += item_chars
             items += 1
+            
+            if limit is None or items <= limit:
+                limited_tokens += item_tokens
+                limited_chars += item_chars
+    
     average = tokens / items if items else 0.0
+    actual_items = min(items, limit) if limit else items
+    
     return {
-        "items": items,
-        "tokens": tokens,
-        "chars": chars,
+        "total_items": items,
+        "total_tokens": tokens,
+        "total_chars": chars,
         "average_tokens": average,
+        "translation_limit": limit,
+        "actual_items": actual_items,
+        "actual_tokens": limited_tokens,
+        "actual_chars": limited_chars,
     }
 
 
@@ -61,7 +84,7 @@ def main() -> None:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    summary = summarize_tokens(input_path)
+    summary = summarize_tokens(input_path, args.limit)
     output_path.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",

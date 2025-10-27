@@ -159,7 +159,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: prepare-artifacts
-          path: out
+          path: .
 
       - name: Show token summary
         run: |

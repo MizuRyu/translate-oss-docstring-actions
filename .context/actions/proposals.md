@@ -22,3 +22,4 @@
 - `translate.yml` (本番) と `translate-test.yml` (検証) を追加。`translate.yml` は `translation-approval` 環境で承認を要し、抽出結果のトークンサマリを表示後に翻訳を実行する。成果物は `out/` 配下のみを artifact 化し、JSONL 本体はGitHub上にログとしては残さない。
 - `translate-test.yml` は `mock_mode` や `max_records` を入力で制御できる検証フロー。`act` などローカル検証でも Secrets 不要で実行可能。
 - 両ワークフローとも `exclude_terms` を自然言語で受け取り、テンプレートに埋め込む形式に統一。今後 workflow_dispatch 入力を増やす場合も `.format()` で対応できる。
+- 成果物は `artifact_dir` 入力（既定値 `translated`）にコピーしつつ、必要に応じて `upload-artifact` で取得できる構成にした。

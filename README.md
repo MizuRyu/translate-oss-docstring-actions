@@ -22,7 +22,7 @@ libcst を利用して Python ファイルから docstring / コメント / ロ�
 
    ```bash
    uv run python main.py extract test_data \
-     --output extracted.jsonl \
+     --output out/extracted.jsonl \
      --include-log-messages \
      --verbose \
      --log-level INFO
@@ -35,9 +35,9 @@ libcst を利用して Python ファイルから docstring / コメント / ロ�
 3. 翻訳
 
    ```bash
-   uv run python main.py translate extracted.jsonl \
-     --output translated.jsonl \
-     --failed-output unprocessed.jsonl \
+   uv run python main.py translate out/extracted.jsonl \
+     --output out/translated.jsonl \
+     --failed-output out/unprocessed.jsonl \
      --batch-size 5 \
      --mock \
      --log-level INFO
@@ -45,13 +45,13 @@ libcst を利用して Python ファイルから docstring / コメント / ロ�
 
    - `--mock` を付けると LLM を呼び出さずに `(mock)` を付けた結果を返し、`unprocessed.jsonl` には残さず完走します。
    - 実際の GitHub Models を利用する場合は `--mock` を外し、環境変数 `GITHUB_MODELS_ENDPOINT` / `GITHUB_TOKEN` / `GITHUB_MODELS_MODEL` を設定してください。レート制限に遭った場合は `AZURE_INFERENCE_ENDPOINT` / `AZURE_INFERENCE_CREDENTIAL` / `AZURE_INFERENCE_MODEL` が揃っていれば Azure Inference に自動フォールバックします。
-   - トークン上限 (既定 7,500) を超えるエントリは即座に `unprocessed.jsonl` へ書き出され、警告ログが表示されます。
+   - トークン上限 (既定 2,500) を超えるエントリは即座に `out/unprocessed.jsonl` へ書き出され、警告ログが表示されます。
 
 4. 反映
 
    ```bash
-   uv run python main.py replace translated.jsonl \
-     --output-dir translated_sources \
+   uv run python main.py replace out/translated.jsonl \
+     --output-dir out/translated_sources \
      --root test_data \
      --mode indirect \
      --log-level INFO
@@ -64,7 +64,7 @@ libcst を利用して Python ファイルから docstring / コメント / ロ�
 
 5. クリーンアップ（任意）
 
-   結果ファイルを再生成したい場合は、`extracted.jsonl` / `translated.jsonl` / `unprocessed.jsonl` / `translated_sources/` を削除してから再実行してください。
+   結果ファイルを再生成したい場合は、`out/extracted.jsonl` / `out/translated.jsonl` / `out/unprocessed.jsonl` / `out/translated_sources/` を削除してから再実行してください。
 
 ## テスト
 

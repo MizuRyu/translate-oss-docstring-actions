@@ -16,6 +16,7 @@ archive/*
 test_data/*
 translated_sources/*
 
+out/*
 extracted.jsonl
 translated.jsonl
 unprocessed.jsonl

@@ -24,7 +24,7 @@ def create_parser() -> argparse.ArgumentParser:
     # extract
     extract = subparsers.add_parser("extract", help="docstring・コメントを抽出してJSONLに書き出す")
     extract.add_argument("root", nargs="?", default=".")
-    extract.add_argument("--output", default="extracted.jsonl")
+    extract.add_argument("--output", default="out/extracted.jsonl")
     extract.add_argument("--jobs", type=int, default=None, help="未使用オプション（互換用）")
     extract.add_argument(
         "--include-log-messages",
@@ -46,8 +46,8 @@ def create_parser() -> argparse.ArgumentParser:
     # translate
     translate = subparsers.add_parser("translate", help="抽出JSONLを翻訳する")
     translate.add_argument("input")
-    translate.add_argument("--output", default="translated.jsonl")
-    translate.add_argument("--failed-output", default="unprocessed.jsonl")
+    translate.add_argument("--output", default="out/translated.jsonl")
+    translate.add_argument("--failed-output", default="out/unprocessed.jsonl")
     translate.add_argument("--limit", type=int, default=None)
     translate.add_argument("--system-prompt-file", default=None)
     translate.add_argument("--mock", action="store_true", dest="is_mock", help="LLMを呼び出さずモックで翻訳する")
@@ -57,7 +57,7 @@ def create_parser() -> argparse.ArgumentParser:
     # replace
     apply = subparsers.add_parser("replace", help="翻訳済みJSONLをソースへ適用する")
     apply.add_argument("input")
-    apply.add_argument("--output-dir", default="translated_sources")
+    apply.add_argument("--output-dir", default="out/translated_sources")
     apply.add_argument("--root", default=".")
     apply.add_argument("--mode", default="indirect")
     apply.add_argument("--log-level", default="INFO")

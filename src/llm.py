@@ -17,11 +17,9 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.util import count_tokens, logger
 
-MAX_TOKENS = 8000
+MAX_TOKENS = 3000
 TOKEN_BUFFER = 500
 MAX_REQUEST_TOKENS = MAX_TOKENS - TOKEN_BUFFER
-GITHUB_MODELS_RPM = 15
-GITHUB_MODELS_DAILY = 150
 REQUEST_OVERHEAD_TOKENS = 10
 TEMPERATURE = 0.2
 TOP_P = 1.0
@@ -65,9 +63,11 @@ class GithubModelPolicy(NamedTuple):
 
 
 _GITHUB_MODEL_POLICIES: Dict[str, GithubModelPolicy] = {
-    "openai/gpt-4.1-mini": GithubModelPolicy(rpm=15, rpd=150, concurrency=5),
     "openai/gpt-4.1": GithubModelPolicy(rpm=10, rpd=150, concurrency=2),
+    "openai/gpt-4.1-mini": GithubModelPolicy(rpm=15, rpd=150, concurrency=5),
 }
+
+GITHUB_MODEL_SEQUENCE = ["openai/gpt-4.1", "openai/gpt-4.1-mini"]
 
 
 class ConcurrencyLimiter:
@@ -182,40 +182,49 @@ async def translate_batch(
         translations = await _mock_request(system_prompt, texts)
         return translations, None, stats
 
-    model_name = os.getenv("GITHUB_MODELS_MODEL", "openai/gpt-4.1-mini")
-    policy = _get_github_model_policy(model_name)
     primary_client = get_github_client()
-    primary_params = _get_model_config(model_name)
-    request_limiter = RequestRateLimiter(policy.rpm, policy.rpd)
-    concurrency_limiter = _get_concurrency_limiter(model_name, policy.concurrency)
 
-    if concurrency_limiter is None:
-        raise TranslationRequestError(
-            f"GitHubモデルの同時実行数が未設定です model={model_name}"
-        )
-
-    try:
-        async with concurrency_limiter.slot():
-            await request_limiter.acquire()
-            translations = await asyncio.wait_for(
-                _invoke_client(primary_client, primary_params, system_prompt, texts),
-                timeout=PRIMARY_TIMEOUT_SECONDS,
+    for model_name in GITHUB_MODEL_SEQUENCE:
+        policy = _get_github_model_policy(model_name)
+        concurrency_limiter = _get_concurrency_limiter(model_name, policy.concurrency)
+        if concurrency_limiter is None:
+            raise TranslationRequestError(
+                f"GitHubモデルの同時実行数が未設定です model={model_name}"
             )
-        stats["primary_requests"] += 1
-        return translations, None, stats
-    except asyncio.TimeoutError:
-        logger.warning(
-            "GitHub primary timed out after %.1f sec entries=%d",
-            PRIMARY_TIMEOUT_SECONDS,
-            len(texts),
-        )
-        stats["timeouts"] += 1
-    except (RateLimitError, DailyLimitError) as rate_error:
-        logger.debug("primary rate limit error=%s", rate_error)
-        stats["rate_limit_hits"] += 1
-    except (TranslationRequestError, TranslationParseError) as primary_error:
-        logger.debug("primary failed error=%s", primary_error)
-        stats["rate_limit_hits"] += 1
+
+        request_limiter = RequestRateLimiter(policy.rpm, policy.rpd)
+        primary_params = _get_model_config(model_name)
+
+        try:
+            async with concurrency_limiter.slot():
+                await request_limiter.acquire()
+                translations = await asyncio.wait_for(
+                    _invoke_client(primary_client, primary_params, system_prompt, texts),
+                    timeout=PRIMARY_TIMEOUT_SECONDS,
+                )
+            stats["primary_requests"] += 1
+            logger.debug("GitHub model used model=%s", model_name)
+            return translations, None, stats
+        except asyncio.TimeoutError:
+            logger.warning(
+                "GitHub model timed out model=%s limit=%.1f entries=%d",
+                model_name,
+                PRIMARY_TIMEOUT_SECONDS,
+                len(texts),
+            )
+            stats["timeouts"] += 1
+            continue
+        except DailyLimitError:
+            logger.info("GitHub model daily limit reached model=%s", model_name)
+            stats["rate_limit_hits"] += 1
+            continue
+        except RateLimitError as rate_error:
+            logger.debug("GitHub rate limit model=%s error=%s", model_name, rate_error)
+            stats["rate_limit_hits"] += 1
+            continue
+        except (TranslationRequestError, TranslationParseError) as primary_error:
+            logger.debug("GitHub request failed model=%s error=%s", model_name, primary_error)
+            break
 
     fallback_client = get_azure_client()
     fallback_params = _get_model_config(os.getenv("AZURE_INFERENCE_MODEL", "gpt-4.1-mini"))
@@ -271,6 +280,18 @@ async def _invoke_client(
         raise
     except Exception as e:  # pragma: no cover
         raise TranslationRequestError(str(e)) from e
+
+    usage = getattr(response, "usage", None)
+    if usage:
+        prompt_tokens = _extract_usage_value(usage, "prompt_tokens")
+        completion_tokens = _extract_usage_value(usage, "completion_tokens")
+        total_tokens = _extract_usage_value(usage, "total_tokens")
+        logger.debug(
+            "LLM usage prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+        )
 
     content = _extract_content(response)
     return _parse(content)
@@ -337,6 +358,12 @@ def _parse(response_text: str) -> List[str]:
     translations = sorted(model.translations, key=lambda item: item.index)
     _validate_indexes(translations)
     return [entry.translation for entry in translations]
+
+
+def _extract_usage_value(usage: Any, key: str) -> Optional[int]:
+    if isinstance(usage, dict):
+        return usage.get(key)
+    return getattr(usage, key, None)
 
 
 def _validate_indexes(entries: Sequence[TranslationEntry]) -> None:

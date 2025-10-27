@@ -16,6 +16,7 @@ archive/*
 test_data/*
 translated_sources/*
 translated/*
+target-repo/*
 
 out/*
 extracted.jsonl

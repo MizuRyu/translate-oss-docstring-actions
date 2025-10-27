@@ -2,7 +2,9 @@ import asyncio
 import os
 import sys
 import unittest
+from contextlib import asynccontextmanager
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = PROJECT_ROOT / "src"
@@ -88,6 +90,62 @@ class GithubModelPolicyTests(unittest.TestCase):
         # given：未登録モデル名
         with self.assertRaises(TranslationRequestError):
             _get_github_model_policy("unknown/model")
+
+
+class TranslateBatchMockTests(unittest.TestCase):
+    """translate_batch関数のモックテスト"""
+
+    def test_mock_mode_returns_original_text(self) -> None:
+        """モックモードでは元のテキスト+(mock)を返す"""
+        entries = [
+            {"path": "test.py", "kind": "comment", "text": "Hello", "meta": {}},
+            {"path": "test.py", "kind": "docstring", "text": "World", "meta": {}},
+        ]
+        system_prompt = "Translate to Japanese"
+
+        translations, error, stats = asyncio.run(
+            translate_batch(system_prompt, entries, is_mock=True)
+        )
+
+        self.assertIsNone(error)
+        self.assertIsNotNone(translations)
+        self.assertEqual(len(translations), 2)
+        self.assertEqual(translations[0], "Hello (mock)")
+        self.assertEqual(translations[1], "World (mock)")
+        self.assertEqual(stats["primary_requests"], 0)
+
+    @patch("llm._invoke_client")
+    @patch("llm._get_concurrency_limiter")
+    @patch("llm.get_github_client")
+    def test_translate_batch_success_with_primary(
+        self, mock_get_client, mock_limiter, mock_invoke
+    ) -> None:
+        """Primary成功時の翻訳"""
+        # モックリミッター
+        mock_limiter_instance = MagicMock()
+        
+        @asynccontextmanager
+        async def mock_slot():
+            yield
+        
+        mock_limiter_instance.slot = mock_slot
+        mock_limiter.return_value = mock_limiter_instance
+
+        # モック翻訳結果
+        mock_invoke.return_value = ["こんにちは"]
+
+        entries = [{"path": "test.py", "kind": "comment", "text": "Hello", "meta": {}}]
+        system_prompt = "Translate to Japanese"
+
+        translations, error, stats = asyncio.run(
+            translate_batch(system_prompt, entries, is_mock=False)
+        )
+
+        self.assertIsNone(error)
+        self.assertIsNotNone(translations)
+        self.assertEqual(len(translations), 1)
+        self.assertEqual(translations[0], "こんにちは")
+        self.assertGreater(stats["primary_requests"], 0)
 
 
 if __name__ == "__main__":

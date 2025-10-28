@@ -231,19 +231,24 @@ jobs:
 
       - name: Apply translated content
         run: |
+          # まずtarget-repo全体をresults/artifactsにコピー（元の構造を保持）
+          echo "============================================"
+          echo "📂 target-repo/${{ inputs.subdirectory }} を results/artifacts にコピー..."
+
+          mkdir -p results/artifacts
+          rsync -av target-repo/${{ inputs.subdirectory }}/ results/artifacts/
+
+          echo "✅ 元のファイル構造をコピー完了"
+          echo "============================================"
+
+          # 翻訳済みファイルで上書き
+          echo "� 翻訳済みファイルを適用中..."
           uv run python main.py replace results/translated.jsonl \
             --output-dir results/artifacts \
             --root target-repo/${{ inputs.subdirectory }} \
             --log-level INFO
 
-          # target-repo全体をresults/artifactsにコピー（元の構造を保持）
-          echo "============================================"
-          echo "📂 target-repo/${{ inputs.subdirectory }} を results/artifacts にコピー..."
-
-          # 翻訳済みファイルで上書きするため、まずtarget-repo全体をコピー
-          rsync -av target-repo/${{ inputs.subdirectory }}/ results/artifacts/
-
-          echo "✅ コピー完了（翻訳済みファイルは上書き、未翻訳ファイルは元のまま）"
+          echo "✅ 翻訳適用完了（翻訳済みファイルは上書き、未翻訳ファイルは元のまま）"
           echo "============================================"
 
       - name: Upload translation artifacts

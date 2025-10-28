@@ -69,13 +69,13 @@ jobs:
 
       - name: Extract docstrings and comments
         run: |
-          mkdir -p out
+          mkdir -p results
           ARGS=""
           if [[ "${{ inputs.include_log_messages }}" == 'true' ]]; then
             ARGS="${ARGS} --include-log-messages"
           fi
           uv run python main.py extract target-repo/${{ inputs.subdirectory }} \
-            --output out/extracted.jsonl \
+            --output results/extracted.jsonl \
             $ARGS \
             --log-level INFO
 
@@ -83,19 +83,19 @@ jobs:
         id: summary
         run: |
           uv run python scripts/summarize_tokens.py \
-            --input out/extracted.jsonl \
-            --output out/token-summary.json
+            --input results/extracted.jsonl \
+            --output results/token-summary.json
 
           # GitHub Outputに保存（JSONを1行に圧縮）
-          SUMMARY=$(jq -c '.' out/token-summary.json)
+          SUMMARY=$(jq -c '.' results/token-summary.json)
           echo "json=$SUMMARY" >> "$GITHUB_OUTPUT"
 
           # Step Summaryに詳細表示
-          ITEMS=$(jq '.items // (.items | length?)' out/token-summary.json)
-          TOKENS=$(jq '.tokens' out/token-summary.json)
-          AVG_TOKENS=$(jq '.average_tokens' out/token-summary.json)
-          MAX_TOKENS=$(jq '.max_tokens // 0' out/token-summary.json)
-          MIN_TOKENS=$(jq '.min_tokens // 0' out/token-summary.json)
+          ITEMS=$(jq '.items // (.items | length?)' results/token-summary.json)
+          TOKENS=$(jq '.tokens' results/token-summary.json)
+          AVG_TOKENS=$(jq '.average_tokens' results/token-summary.json)
+          MAX_TOKENS=$(jq '.max_tokens // 0' results/token-summary.json)
+          MIN_TOKENS=$(jq '.min_tokens // 0' results/token-summary.json)
 
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
           ## 📊 トークン使用量サマリ
@@ -127,8 +127,8 @@ jobs:
         with:
           name: prepare-artifacts
           path: |
-            out/extracted.jsonl
-            out/token-summary.json
+            results/extracted.jsonl
+            results/token-summary.json
 
   translate:
     name: Translate And Apply
@@ -153,14 +153,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: prepare-artifacts
-          path: .
+          path: results
 
       - name: Show token summary
         run: |
           echo "============================================"
           echo "📊 翻訳前のトークン確認"
           echo "============================================"
-          cat out/token-summary.json | jq -r '
+          cat results/token-summary.json | jq -r '
             "抽出件数: \(.items // (.items | length?))件",
             "総トークン数: \(.tokens)",
             "平均トークン数: \(.average_tokens)",
@@ -182,7 +182,6 @@ jobs:
           AZURE_INFERENCE_MODEL: ${{ secrets.AZURE_INFERENCE_MODEL }}
           API_VERSION: ${{ secrets.API_VERSION }}
         run: |
-          mkdir -p out
           TRANSLATE_ARGS=()
           if [ "${{ inputs.translation_limit }}" != "0" ]; then
               TRANSLATE_ARGS+=("--limit" "${{ inputs.translation_limit }}")
@@ -193,32 +192,29 @@ jobs:
           if [[ "${{ inputs.mock_mode }}" == 'true' ]]; then
               TRANSLATE_ARGS+=("--mock")
           fi
-          uv run python main.py translate out/extracted.jsonl \
-            --output out/translated.jsonl \
-            --failed-output out/unprocessed.jsonl \
+          uv run python main.py translate results/extracted.jsonl \
+            --output results/translated.jsonl \
+            --failed-output results/unprocessed.jsonl \
             "${TRANSLATE_ARGS[@]}" \
             --log-level INFO
 
       - name: Apply translated content
         run: |
-          uv run python main.py replace out/translated.jsonl \
-            --output-dir out/translated_sources \
+          uv run python main.py replace results/translated.jsonl \
+            --output-dir results/artifacts \
             --root target-repo/${{ inputs.subdirectory }} \
             --log-level INFO
-          if [ -d out/translated_sources ]; then
-            rsync -av --ignore-existing out/translated_sources/ target-repo/${{ inputs.subdirectory }}/
+          if [ -d results/artifacts ]; then
+            rsync -av --ignore-existing results/artifacts/ target-repo/${{ inputs.subdirectory }}/
           fi
 
-      - name: Collect artifacts
-        run: |
-          mkdir -p translated
-          cp out/extracted.jsonl translated/
-          cp out/translated.jsonl translated/
-          cp out/unprocessed.jsonl translated/
-          cp out/token-summary.json translated/
-          cp -R out/translated_sources translated/
-          echo "Artifacts saved to: translated"
-          ls -R translated
+      - name: Upload translation artifacts
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: translation-results
+          path: results
+            out/translated_sources
 
       - name: Commit and push results (GitHub only)
         if: ${{ !env.ACT && inputs.push_results }}
@@ -227,27 +223,19 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 翻訳結果をコミット
-          git add translated
+          # 翻訳結果をコミット（target-repoのみ）
+          cd target-repo/${{ inputs.subdirectory }}
+          git add .
 
           # 変更があればコミット
           if git diff --staged --quiet; then
             echo "変更なし - コミットをスキップ"
           else
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            ITEMS=$(jq '.items // (.items | length?)' translated/token-summary.json)
-            git commit -m "chore(translation): 翻訳結果を追加" \
-              -m "Repository: ${{ inputs.repository_url }}" \
-              -m "Subdirectory: ${{ inputs.subdirectory }}" \
+            ITEMS=$(jq '.items // (.items | length?)' ../../results/token-summary.json)
+            git commit -m "chore(translation): docstring/コメントを翻訳" \
               -m "Translated items: ${ITEMS}" \
               -m "Timestamp: ${TIMESTAMP}"
             git push
             echo "✅ 翻訳結果をリポジトリにpushしました"
           fi
-
-      - name: Upload translation artifacts
-        if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: translation-results
-          path: translated

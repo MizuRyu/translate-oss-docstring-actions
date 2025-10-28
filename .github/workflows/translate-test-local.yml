@@ -28,11 +28,6 @@ on:
         required: false
         default: ""
         type: string
-      artifact_dir:
-        description: "成果物を保存するディレクトリ"
-        required: false
-        default: "translated"
-        type: string
 
 jobs:
   translate-test:
@@ -53,17 +48,17 @@ jobs:
 
       - name: Extract content
         run: |
-          mkdir -p out
+          mkdir -p results
           uv run python main.py extract target-repo/${{ inputs.subdirectory }} \
-            --output out/extracted.jsonl \
+            --output results/extracted.jsonl \
             --log-level INFO
 
       - name: Summarize tokens
         run: |
           uv run python scripts/summarize_tokens.py \
-            --input out/extracted.jsonl \
-            --output out/token-summary.json
-          cat out/token-summary.json
+            --input results/extracted.jsonl \
+            --output results/token-summary.json
+          cat results/token-summary.json
 
       - name: Run translation (test mode)
         run: |
@@ -77,33 +72,22 @@ jobs:
           if [[ "${{ inputs.mock_mode }}" == 'true' ]]; then
               TRANSLATE_ARGS+=("--mock")
           fi
-          uv run python main.py translate out/extracted.jsonl \
-            --output out/translated.jsonl \
-            --failed-output out/unprocessed.jsonl \
+          uv run python main.py translate results/extracted.jsonl \
+            --output results/translated.jsonl \
+            --failed-output results/unprocessed.jsonl \
             "${TRANSLATE_ARGS[@]}" \
             --log-level INFO
 
       - name: Apply results (indirect)
         run: |
-          uv run python main.py replace out/translated.jsonl \
-            --output-dir out/translated_sources \
+          uv run python main.py replace results/translated.jsonl \
+            --output-dir results/artifacts \
             --root target-repo/${{ inputs.subdirectory }} \
             --log-level INFO
-
-      - name: Collect artifacts
-        run: |
-          mkdir -p ${{ inputs.artifact_dir }}
-          cp out/extracted.jsonl ${{ inputs.artifact_dir }}/
-          cp out/translated.jsonl ${{ inputs.artifact_dir }}/
-          cp out/unprocessed.jsonl ${{ inputs.artifact_dir }}/
-          cp out/token-summary.json ${{ inputs.artifact_dir }}/
-          cp -R out/translated_sources ${{ inputs.artifact_dir }}/
-          echo "Artifacts saved to: ${{ inputs.artifact_dir }}"
-          ls -R ${{ inputs.artifact_dir }}
 
       - name: Upload test artifacts
         if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: translation-test-results
-          path: ${{ inputs.artifact_dir }}
+          path: results

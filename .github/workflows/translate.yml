@@ -82,9 +82,16 @@ jobs:
       - name: Summarize token usage
         id: summary
         run: |
+          # translation_limitが0の場合は--limitオプションを付けない
+          LIMIT_ARG=""
+          if [ "${{ inputs.translation_limit }}" -gt 0 ]; then
+            LIMIT_ARG="--limit ${{ inputs.translation_limit }}"
+          fi
+
           uv run python scripts/summarize_tokens.py \
             --input results/extracted.jsonl \
-            --output results/token-summary.json
+            --output results/token-summary.json \
+            $LIMIT_ARG
 
           # GitHub Outputに保存（JSONを1行に圧縮）
           SUMMARY=$(jq -c '.' results/token-summary.json)
@@ -96,13 +103,22 @@ jobs:
           AVG_TOKENS=$(jq '.average_tokens' results/token-summary.json)
           MAX_TOKENS=$(jq '.max_tokens // 0' results/token-summary.json)
           MIN_TOKENS=$(jq '.min_tokens // 0' results/token-summary.json)
+          TOTAL_ITEMS=$(jq '.total_items // .items' results/token-summary.json)
+          LIMIT=$(jq '.translation_limit // 0' results/token-summary.json)
+
+          # 制限がある場合の表示
+          if [ "$LIMIT" != "null" ] && [ "$LIMIT" -gt 0 ]; then
+            ITEMS_DISPLAY="${ITEMS}件 (全${TOTAL_ITEMS}件中)"
+          else
+            ITEMS_DISPLAY="${ITEMS}件"
+          fi
 
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
           ## 📊 トークン使用量サマリ
 
           | 項目 | 値 |
           |------|------|
-          | 抽出件数 | **${ITEMS}件** |
+          | 抽出件数 | **${ITEMS_DISPLAY}** |
           | 総トークン数 | **${TOKENS}** |
           | 平均トークン数 | **${AVG_TOKENS}** |
           | 最大トークン数 | ${MAX_TOKENS} |
@@ -115,7 +131,7 @@ jobs:
           echo "============================================"
           echo "📊 トークン使用量サマリ"
           echo "============================================"
-          echo "抽出件数: ${ITEMS}件"
+          echo "抽出件数: ${ITEMS_DISPLAY}"
           echo "総トークン数: ${TOKENS}"
           echo "平均トークン数: ${AVG_TOKENS}"
           echo "最大トークン数: ${MAX_TOKENS}"
@@ -204,8 +220,26 @@ jobs:
             --output-dir results/artifacts \
             --root target-repo/${{ inputs.subdirectory }} \
             --log-level INFO
+
+          # 翻訳結果をtarget-repoにコピー（上書き）
           if [ -d results/artifacts ]; then
-            rsync -av --ignore-existing results/artifacts/ target-repo/${{ inputs.subdirectory }}/
+            echo "============================================"
+            echo "📂 results/artifacts の内容:"
+            find results/artifacts -name "*.py" -type f | head -10
+            echo "============================================"
+            echo "📂 results/artifacts のディレクトリ構造:"
+            tree -L 3 results/artifacts || find results/artifacts -type d | head -20
+            echo "============================================"
+            echo "翻訳結果をtarget-repoにコピー..."
+            rsync -av results/artifacts/ target-repo/${{ inputs.subdirectory }}/
+            echo "✅ コピー完了"
+            echo "============================================"
+            echo "📂 target-repo/${{ inputs.subdirectory }} の内容:"
+            find target-repo/${{ inputs.subdirectory }} -name "*.py" -type f | head -10
+            echo "============================================"
+          else
+            echo "⚠️ results/artifactsが見つかりません"
+            exit 1
           fi
 
       - name: Upload translation artifacts
@@ -214,7 +248,6 @@ jobs:
         with:
           name: translation-results
           path: results
-            out/translated_sources
 
       - name: Commit and push results (GitHub only)
         if: ${{ !env.ACT && inputs.push_results }}
@@ -225,11 +258,24 @@ jobs:
 
           # 翻訳結果をコミット（target-repoのみ）
           cd target-repo/${{ inputs.subdirectory }}
+
+          # デバッグ情報
+          echo "============================================"
+          echo "📂 カレントディレクトリ: $(pwd)"
+          echo "📄 ファイル一覧（最初の10件）:"
+          find . -name "*.py" -type f | head -10
+          echo "============================================"
+
           git add .
+
+          # 変更内容を表示
+          echo "📝 変更されたファイル:"
+          git diff --staged --name-only || echo "変更なし"
+          echo "============================================"
 
           # 変更があればコミット
           if git diff --staged --quiet; then
-            echo "変更なし - コミットをスキップ"
+            echo "⚠️ 変更なし - コミットをスキップ"
           else
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
             ITEMS=$(jq '.items // (.items | length?)' ../../results/token-summary.json)

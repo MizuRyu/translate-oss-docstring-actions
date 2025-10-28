@@ -43,6 +43,8 @@ jobs:
   prepare:
     name: Extract And Summarize
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       token-summary: ${{ steps.summary.outputs.json }}
     steps:
@@ -57,7 +59,9 @@ jobs:
 
       - name: Clone target repository
         run: |
+          # 外部リポジトリをクローン（読み取り専用）
           git clone --depth 1 "${{ inputs.repository_url }}" target-repo
+
           if [ -n "${{ inputs.subdirectory }}" ]; then
             case "${{ inputs.subdirectory }}" in
               /*|*../*)
@@ -151,6 +155,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: prepare
     environment: translation-approval
+    permissions:
+      contents: write # 翻訳結果をpushするため
     steps:
       - name: Checkout comment-translator repository
         uses: actions/checkout@v4
@@ -163,6 +169,7 @@ jobs:
 
       - name: Clone target repository
         run: |
+          # 外部リポジトリをクローン（読み取り専用）
           git clone --depth 1 "${{ inputs.repository_url }}" target-repo
 
       - name: Download extraction artifact
@@ -256,17 +263,15 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 翻訳結果をコミット（target-repoのみ）
-          cd target-repo/${{ inputs.subdirectory }}
-
           # デバッグ情報
           echo "============================================"
           echo "📂 カレントディレクトリ: $(pwd)"
-          echo "📄 ファイル一覧（最初の10件）:"
-          find . -name "*.py" -type f | head -10
+          echo "📄 変更対象のファイル一覧（最初の10件）:"
+          find target-repo/${{ inputs.subdirectory }} -name "*.py" -type f 2>/dev/null | head -10 || echo "Pythonファイルが見つかりません"
           echo "============================================"
 
-          git add .
+          # 翻訳結果をステージング（target-repoディレクトリ内の変更）
+          git add target-repo/${{ inputs.subdirectory }}
 
           # 変更内容を表示
           echo "📝 変更されたファイル:"
@@ -278,10 +283,12 @@ jobs:
             echo "⚠️ 変更なし - コミットをスキップ"
           else
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            ITEMS=$(jq '.items // (.items | length?)' ../../results/token-summary.json)
+            ITEMS=$(jq '.items // (.items | length?)' results/token-summary.json)
             git commit -m "chore(translation): docstring/コメントを翻訳" \
               -m "Translated items: ${ITEMS}" \
               -m "Timestamp: ${TIMESTAMP}"
+            
+            echo "🚀 リモートにプッシュ中..."
             git push
             echo "✅ 翻訳結果をリポジトリにpushしました"
           fi

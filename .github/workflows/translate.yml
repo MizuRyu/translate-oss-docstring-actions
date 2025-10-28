@@ -263,6 +263,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+          # target-repoの.gitディレクトリを削除（サブモジュール扱いを回避）
+          echo "🔧 target-repoをGit管理対象に変換中..."
+          rm -rf target-repo/.git
+          
           # デバッグ情報
           echo "============================================"
           echo "📂 カレントディレクトリ: $(pwd)"
@@ -276,6 +280,8 @@ jobs:
           # 変更内容を表示
           echo "📝 変更されたファイル:"
           git diff --staged --name-only || echo "変更なし"
+          echo "📝 変更されたファイルの詳細（最初の5件）:"
+          git diff --staged --stat | head -6
           echo "============================================"
 
           # 変更があればコミット

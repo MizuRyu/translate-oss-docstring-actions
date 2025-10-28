@@ -23,6 +23,11 @@ on:
         required: false
         default: false
         type: boolean
+      no_fallback:
+        description: "Fallback無効化（トークン超過時にAzure Fallbackしない）"
+        required: false
+        default: false
+        type: boolean
       include_log_messages:
         description: "logger/printも抽出対象に含める"
         required: false
@@ -214,6 +219,9 @@ jobs:
           fi
           if [[ "${{ inputs.mock_mode }}" == 'true' ]]; then
               TRANSLATE_ARGS+=("--mock")
+          fi
+          if [[ "${{ inputs.no_fallback }}" == 'true' ]]; then
+              TRANSLATE_ARGS+=("--no-fallback")
           fi
           uv run python main.py translate results/extracted.jsonl \
             --output results/translated.jsonl \

@@ -22,7 +22,6 @@ results/
 
 # Test/development artifacts
 test_data/*
-target-repo/*
 
 # Documentation (keep .context/ in git for planning)
 AGENTS.md

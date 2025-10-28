@@ -54,6 +54,12 @@ def create_parser() -> argparse.ArgumentParser:
     translate.add_argument("--system-prompt-file", default=None)
     translate.add_argument("--exclude-terms", default=None)
     translate.add_argument("--mock", action="store_true", dest="is_mock", help="LLMを呼び出さずモックで翻訳する")
+    translate.add_argument(
+        "--no-fallback",
+        action="store_true",
+        default=False,
+        help="トークン超過エントリのFallback処理を無効化（スキップのみ）",
+    )
     translate.add_argument("--log-level", default="INFO")
 
     # replace
@@ -98,6 +104,7 @@ def parse_args(argv: Optional[Sequence[str]]) -> Dict[str, Any]:
                 "system_prompt": prompt,
                 "exclude_terms": args.exclude_terms,
                 "is_mock": args.is_mock,
+                "enable_fallback": not args.no_fallback,
                 "log_level": args.log_level,
             },
         }

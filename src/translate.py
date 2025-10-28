@@ -21,11 +21,13 @@ from util import count_tokens, logger
 load_dotenv()
 
 
+# 定数定義
 DEFAULT_EXCLUDE_TERMS = (
     "Agent, ID, Thread, Chat, Client, Class, Context, Import, "
     "Export, Key, Token, Secret, Config, Prompt, Request, Response, "
     "State, Message, Optional, None, Middleware, Executor"
 )
+MAX_OVERSIZED_TOKENS = 50000  # この値を超えるエントリは異常データとして除外
 
 PROMPT_TEMPLATE = dedent(
     """\
@@ -75,6 +77,7 @@ async def run(settings: Dict[str, Any]) -> None:
         "limit": settings.get("limit"),
         "system_prompt": settings.get("system_prompt", prompt_text),
         "is_mock": bool(settings.get("is_mock", False)),
+        "enable_fallback": bool(settings.get("enable_fallback", True)),
     }
 
     entries = _load_entries(cfg["input_path"], cfg["limit"])
@@ -84,16 +87,20 @@ async def run(settings: Dict[str, Any]) -> None:
 
     cfg["failed_output"].write_text("", encoding="utf-8")
 
-    batches = _build_batches_within_token_limit(
+    batches, oversized_entries = _build_batches_within_token_limit(
         entries,
         cfg["system_prompt"],
         cfg["failed_output"],
+        cfg["enable_fallback"],
     )
 
     cfg["output_path"].parent.mkdir(parents=True, exist_ok=True)
     cfg["failed_output"].parent.mkdir(parents=True, exist_ok=True)
 
-    log_stage_start("Translate", f"Items: {len(entries)}, Batches: {len(batches)}")
+    log_stage_start(
+        "Translate",
+        f"Items: {len(entries)}, Batches: {len(batches)}, Oversized: {len(oversized_entries)}",
+    )
 
     start = perf_counter()
     success_count = 0
@@ -173,6 +180,20 @@ async def run(settings: Dict[str, Any]) -> None:
                 failed.write(json.dumps(entry, ensure_ascii=False))
                 failed.write("\n")
 
+    # トークン超過エントリのFallback処理
+    oversized_success = 0
+    if oversized_entries and cfg["enable_fallback"]:
+        logger.info(
+            "トークン超過エントリをFallback処理します: %d件", len(oversized_entries)
+        )
+        oversized_success = await _process_oversized_entries(
+            oversized_entries,
+            cfg["output_path"],
+            cfg["failed_output"],
+            cfg["system_prompt"],
+            cfg["is_mock"],
+        )
+
     duration = perf_counter() - start
     primary_requests = stats.get("primary_requests", 0)
     fallback_requests = stats.get("fallback_requests", 0)
@@ -182,7 +203,9 @@ async def run(settings: Dict[str, Any]) -> None:
     log_summary("Translate", {
         "Total Items": len(entries),
         "Success": success_count,
+        "Oversized Success": oversized_success,
         "Failed": len(failure_items),
+        "Oversized Failed": len(oversized_entries) - oversized_success,
         "Batches": len(batches),
         "LLM Requests": primary_requests + fallback_requests,
         "Fallback Count": fallback_requests,
@@ -193,16 +216,114 @@ async def run(settings: Dict[str, Any]) -> None:
 
 
 def _load_entries(path: Path, limit: Optional[int]) -> List[Dict[str, Any]]:
-    entries: List[Dict[str, Any]] = []
+    """入力JSONLを読み込む"""
+
     with path.open("r", encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle):
-            if limit is not None and line_number >= limit:
-                break
-            line = line.strip()
-            if not line:
+        items = [json.loads(line) for line in handle]
+
+    if limit and limit > 0:
+        return items[:limit]
+
+    return items
+
+
+async def _process_oversized_entries(
+    oversized_entries: List[Dict[str, Any]],
+    output_path: Path,
+    failed_output: Path,
+    system_prompt: str,
+    is_mock: bool,
+) -> int:
+    """
+    トークン超過エントリをFallbackで処理する
+    
+    トークン数が2,500を超えるエントリを1件ずつFallbackモデルで処理する。
+    50,000トークンを超える異常データはunprocessedに出力する。
+    
+    Args:
+        oversized_entries: トークン超過エントリリスト
+        output_path: 成功した翻訳の出力先
+        failed_output: 失敗した翻訳の出力先
+        system_prompt: システムプロンプト
+        is_mock: モックモード（常にFalse想定）
+    
+    Returns:
+        成功した件数
+    """
+    success_count = 0
+    
+    for entry in oversized_entries:
+        entry_tokens = entry.get("tokens", 0)
+        entry_path = entry.get("path", "unknown")
+        entry_line = entry.get("meta", {}).get("line_start", 0)
+        
+        try:
+            # 50,000トークン超は異常データとして除外
+            if entry_tokens > MAX_OVERSIZED_TOKENS:
+                logger.warning(
+                    "異常に大きいエントリをスキップ: %s:%d (tokens=%d, max=%d)",
+                    entry_path,
+                    entry_line,
+                    entry_tokens,
+                    MAX_OVERSIZED_TOKENS,
+                )
+                entry_with_error = {
+                    **entry,
+                    "error": f"oversized_entry: {entry_tokens} tokens exceeds {MAX_OVERSIZED_TOKENS}",
+                }
+                with failed_output.open("a", encoding="utf-8") as failed:
+                    failed.write(json.dumps(entry_with_error, ensure_ascii=False))
+                    failed.write("\n")
                 continue
-            entries.append(json.loads(line))
-    return entries
+            
+            # Fallbackモデルで1件ずつ処理（バッチではなく個別問い合わせ）
+            batch_result = await translate_batch(
+                system_prompt,
+                [entry],
+                is_mock=is_mock,
+            )
+            translations, error, _ = batch_result
+            
+            if translations and len(translations) > 0:
+                translated = translations[0]
+            else:
+                raise Exception(f"Fallback translation failed: {error}")
+            
+            # 成功した翻訳を出力
+            payload = {
+                "path": entry["path"],
+                "kind": entry["kind"],
+                "original": entry["text"],
+                "translated": translated,
+                "meta": entry["meta"],
+            }
+            
+            with output_path.open("a", encoding="utf-8") as success:
+                success.write(json.dumps(payload, ensure_ascii=False))
+                success.write("\n")
+            
+            success_count += 1
+            logger.info(
+                "Oversized Entry Processed: %s:%d (tokens=%d)",
+                entry_path,
+                entry_line,
+                entry_tokens,
+            )
+            
+        except Exception as e:
+            # Fallback失敗時はunprocessedに出力
+            logger.error(
+                "Oversized Entry Failed: %s:%d - %s",
+                entry_path,
+                entry_line,
+                str(e),
+            )
+            entry_with_error = {**entry, "error": f"fallback_failed: {str(e)}"}
+            with failed_output.open("a", encoding="utf-8") as failed:
+                failed.write(json.dumps(entry_with_error, ensure_ascii=False))
+                failed.write("\n")
+    
+    return success_count
 
 
 def _write_failures(path: Path, items: Sequence[Dict[str, Any]]) -> None:
@@ -217,11 +338,25 @@ def _build_batches_within_token_limit(
     entries: Sequence[Dict[str, Any]],
     system_prompt: str,
     failed_output: Path,
+    enable_fallback: bool = True,
     max_tokens: int = MAX_REQUEST_TOKENS,
-) -> List[List[Dict[str, Any]]]:
-    """エントリーをtoken上限内でバッチ分割する"""
+) -> Tuple[List[List[Dict[str, Any]]], List[Dict[str, Any]]]:
+    """
+    エントリーをtoken上限内でバッチ分割する
+    
+    Args:
+        entries: 翻訳対象エントリ
+        system_prompt: システムプロンプト
+        failed_output: 失敗エントリの出力先
+        enable_fallback: Fallback処理を有効化するか
+        max_tokens: バッチあたりの最大トークン数
+    
+    Returns:
+        (batches, oversized_entries): バッチリストとトークン超過エントリリスト
+    """
     system_prompt_tokens = count_tokens(system_prompt)
     batches: List[List[Dict[str, Any]]] = []
+    oversized_entries: List[Dict[str, Any]] = []
     current: List[Dict[str, Any]] = []
 
     token_usage = 0
@@ -232,17 +367,23 @@ def _build_batches_within_token_limit(
         tokens = count_tokens(text) + REQUEST_OVERHEAD_TOKENS
 
         if tokens > max_tokens:
-            # 1つのテキストデータがMAX_TOKEN超過する場合は処理しない
+            # 1つのテキストデータがMAX_TOKEN超過する場合
             entry_with_error = {**entry, "error": "token_limit_exceeded", "tokens": tokens}
             logger.warning(
-                "\nOversized Entry Skipped path=%s kind=%s tokens=%d",
+                "Oversized Entry Detected path=%s kind=%s tokens=%d",
                 entry.get("path"),
                 entry.get("kind"),
                 tokens,
             )
-            with failed_output.open("a", encoding="utf-8") as failed_handle:
-                failed_handle.write(json.dumps(entry_with_error, ensure_ascii=False))
-                failed_handle.write("\n")
+            
+            if enable_fallback:
+                # Fallback有効時はキューに追加
+                oversized_entries.append(entry)
+            else:
+                # Fallback無効時はunprocessedに出力
+                with failed_output.open("a", encoding="utf-8") as failed_handle:
+                    failed_handle.write(json.dumps(entry_with_error, ensure_ascii=False))
+                    failed_handle.write("\n")
             continue
 
         should_flush = current and token_usage + tokens > max_tokens
@@ -258,4 +399,4 @@ def _build_batches_within_token_limit(
     if current:
         batches.append(current)
 
-    return batches
+    return batches, oversized_entries

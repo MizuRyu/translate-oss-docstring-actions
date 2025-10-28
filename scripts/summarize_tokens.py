@@ -69,16 +69,16 @@ def summarize_tokens(input_path: Path, limit: int | None = None) -> dict[str, fl
     actual_items = min(items, limit) if limit else items
     
     return {
-        "total_items": items,
-        "total_tokens": tokens,
-        "total_chars": chars,
+        "items": actual_items,
+        "tokens": limited_tokens,
+        "chars": limited_chars,
         "average_tokens": average,
         "max_tokens": max_tokens if items > 0 else 0,
         "min_tokens": int(min_tokens) if items > 0 else 0,
+        "total_items": items,
+        "total_tokens": tokens,
+        "total_chars": chars,
         "translation_limit": limit,
-        "actual_items": actual_items,
-        "actual_tokens": limited_tokens,
-        "actual_chars": limited_chars,
     }
 
 
@@ -100,10 +100,10 @@ def main() -> None:
     print("📊 トークン使用量サマリ")
     print("=" * 44)
     if args.limit:
-        print(f"抽出件数: {summary['actual_items']:,}件 (制限: {args.limit:,}件)")
+        print(f"抽出件数: {summary['items']:,}件 (制限: {args.limit:,}件)")
     else:
-        print(f"抽出件数: {summary['total_items']:,}件")
-    print(f"総トークン数: {summary['actual_tokens']:,}")
+        print(f"抽出件数: {summary['items']:,}件")
+    print(f"総トークン数: {summary['tokens']:,}")
     print(f"平均トークン数: {summary['average_tokens']:.2f}")
     print(f"最大トークン数: {summary['max_tokens']:,}")
     print(f"最小トークン数: {summary['min_tokens']:,}")

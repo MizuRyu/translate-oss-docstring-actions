@@ -18,7 +18,6 @@ out/
 archives/
 translated/
 translated_sources/
-results/
 
 # Test/development artifacts
 test_data/*

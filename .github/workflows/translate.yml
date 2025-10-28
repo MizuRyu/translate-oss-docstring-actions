@@ -228,26 +228,15 @@ jobs:
             --root target-repo/${{ inputs.subdirectory }} \
             --log-level INFO
 
-          # 翻訳結果をtarget-repoにコピー（上書き）
-          if [ -d results/artifacts ]; then
-            echo "============================================"
-            echo "📂 results/artifacts の内容:"
-            find results/artifacts -name "*.py" -type f | head -10
-            echo "============================================"
-            echo "📂 results/artifacts のディレクトリ構造:"
-            tree -L 3 results/artifacts || find results/artifacts -type d | head -20
-            echo "============================================"
-            echo "翻訳結果をtarget-repoにコピー..."
-            rsync -av results/artifacts/ target-repo/${{ inputs.subdirectory }}/
-            echo "✅ コピー完了"
-            echo "============================================"
-            echo "📂 target-repo/${{ inputs.subdirectory }} の内容:"
-            find target-repo/${{ inputs.subdirectory }} -name "*.py" -type f | head -10
-            echo "============================================"
-          else
-            echo "⚠️ results/artifactsが見つかりません"
-            exit 1
-          fi
+          # target-repo全体をresults/artifactsにコピー（元の構造を保持）
+          echo "============================================"
+          echo "📂 target-repo/${{ inputs.subdirectory }} を results/artifacts にコピー..."
+
+          # 翻訳済みファイルで上書きするため、まずtarget-repo全体をコピー
+          rsync -av target-repo/${{ inputs.subdirectory }}/ results/artifacts/
+
+          echo "✅ コピー完了（翻訳済みファイルは上書き、未翻訳ファイルは元のまま）"
+          echo "============================================"
 
       - name: Upload translation artifacts
         if: ${{ !env.ACT }}
@@ -263,38 +252,47 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # target-repoの.gitディレクトリを削除（サブモジュール扱いを回避）
-          echo "🔧 target-repoをGit管理対象に変換中..."
-          rm -rf target-repo/.git
-          
           # デバッグ情報
           echo "============================================"
-          echo "📂 カレントディレクトリ: $(pwd)"
-          echo "📄 変更対象のファイル一覧（最初の10件）:"
-          find target-repo/${{ inputs.subdirectory }} -name "*.py" -type f 2>/dev/null | head -10 || echo "Pythonファイルが見つかりません"
+          echo "📂 results/ の内容:"
+          ls -lah results/
+          echo "============================================"
+          echo "📂 results/artifacts の構造:"
+          tree -L 2 results/artifacts || find results/artifacts -type d | head -20
           echo "============================================"
 
-          # 翻訳結果をステージング（target-repoディレクトリ内の変更）
-          git add target-repo/${{ inputs.subdirectory }}
+          # results/ 全体をステージング
+          echo "📦 results/ ディレクトリをステージング中..."
+          git add results/
 
           # 変更内容を表示
           echo "📝 変更されたファイル:"
           git diff --staged --name-only || echo "変更なし"
-          echo "📝 変更されたファイルの詳細（最初の5件）:"
-          git diff --staged --stat | head -6
+          echo "📝 変更されたファイルの詳細（最初の10件）:"
+          git diff --staged --stat | head -11
           echo "============================================"
 
           # 変更があればコミット
           if git diff --staged --quiet; then
             echo "⚠️ 変更なし - コミットをスキップ"
           else
-            TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-            ITEMS=$(jq '.items // (.items | length?)' results/token-summary.json)
-            git commit -m "chore(translation): docstring/コメントを翻訳" \
-              -m "Translated items: ${ITEMS}" \
+            # ブランチ名を生成（タイムスタンプ付き）
+            TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+            BRANCH_NAME="translation/results-${TIMESTAMP}"
+            
+            echo "🌿 新しいブランチを作成: ${BRANCH_NAME}"
+            git checkout -b "${BRANCH_NAME}"
+            
+            ITEMS=$(jq -r '.items // 0' results/token-summary.json)
+            TOTAL=$(jq -r '.total_items // 0' results/token-summary.json)
+            
+            git commit -m "chore(translation): docstring/コメントを翻訳 + ソースコード全体" \
+              -m "Translated: ${ITEMS} items (Total extracted: ${TOTAL})" \
+              -m "Includes: translated files + unchanged files (full clone)" \
               -m "Timestamp: ${TIMESTAMP}"
             
-            echo "🚀 リモートにプッシュ中..."
-            git push
-            echo "✅ 翻訳結果をリポジトリにpushしました"
+            echo "🚀 ブランチ ${BRANCH_NAME} をリモートにプッシュ中..."
+            git push -u origin "${BRANCH_NAME}"
+            echo "✅ 翻訳結果を新しいブランチ ${BRANCH_NAME} にpushしました"
+            echo "📋 プルリクエストを作成してください: https://github.com/${{ github.repository }}/compare/${BRANCH_NAME}"
           fi

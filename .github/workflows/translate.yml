@@ -28,6 +28,11 @@ on:
         required: false
         default: false
         type: boolean
+      azure_only:
+        description: "Azure専用モード（GitHub ModelsをスキップしてAzure AI Inferenceのみ使用）"
+        required: false
+        default: false
+        type: boolean
       include_log_messages:
         description: "logger/printも抽出対象に含める"
         required: false
@@ -222,6 +227,9 @@ jobs:
           fi
           if [[ "${{ inputs.no_fallback }}" == 'true' ]]; then
               TRANSLATE_ARGS+=("--no-fallback")
+          fi
+          if [[ "${{ inputs.azure_only }}" == 'true' ]]; then
+              TRANSLATE_ARGS+=("--azure-only")
           fi
           uv run python main.py translate results/extracted.jsonl \
             --output results/translated.jsonl \

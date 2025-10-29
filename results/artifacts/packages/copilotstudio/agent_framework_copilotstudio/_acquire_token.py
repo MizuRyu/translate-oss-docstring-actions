@@ -1,0 +1,93 @@
+# Copyright (c) Microsoft. All rights reserved. pyright: reportUnknownMemberType = false
+# pyright: reportUnknownVariableType = false pyright: reportUnknownArgumentType = false
+
+import logging
+from typing import Any
+
+from agent_framework.exceptions import ServiceException
+from msal import PublicClientApplication
+
+logger = logging.getLogger(__name__)
+
+# Power Platform API のデフォルトスコープ
+DEFAULT_SCOPES = ["https://api.powerplatform.com/.default"]
+
+
+def acquire_token(
+    *,
+    client_id: str,
+    tenant_id: str,
+    username: str | None = None,
+    token_cache: Any | None = None,
+    scopes: list[str] | None = None,
+) -> str:
+    """MSAL Public Client Application を使って認証トークンを取得する。
+
+    この関数はまずトークンをサイレントに取得しようと試み（キャッシュされたトークンを使用）、
+    必要に応じてインタラクティブ認証にフォールバックする。
+
+    Keyword Args:
+        client_id: アプリケーションのクライアントID。
+        tenant_id: 認証用のテナントID。
+        username: オプションのユーザー名（アカウントをフィルタリングするため）。
+        token_cache: オプションのトークンキャッシュ。
+        scopes: オプションのスコープリスト。デフォルトは Power Platform API のスコープ。
+
+    Returns:
+        アクセストークンの文字列。
+
+    Raises:
+        ServiceException: 認証トークンが取得できなかった場合。
+    """
+    if not client_id:
+        raise ServiceException("Client ID is required for token acquisition.")
+
+    if not tenant_id:
+        raise ServiceException("Tenant ID is required for token acquisition.")
+
+    authority = f"https://login.microsoftonline.com/{tenant_id}"
+    target_scopes = scopes or DEFAULT_SCOPES
+
+    pca = PublicClientApplication(client_id=client_id, authority=authority, token_cache=token_cache)
+
+    accounts = pca.get_accounts(username=username)
+
+    token: str | None = None
+
+    # キャッシュされたアカウントがあればまずサイレントトークン取得を試みる
+    if accounts:
+        try:
+            logger.debug("Attempting silent token acquisition")
+            response = pca.acquire_token_silent(scopes=target_scopes, account=accounts[0])
+            if response and "access_token" in response:
+                token = str(response["access_token"])  # type: ignore[assignment]
+                logger.debug("Successfully acquired token silently")
+            elif response and "error" in response:
+                logger.warning(
+                    "Silent token acquisition failed: %s - %s", response.get("error"), response.get("error_description")
+                )
+        except Exception as ex:
+            logger.warning("Silent token acquisition failed with exception: %s", ex)
+
+    # サイレント取得に失敗した場合はインタラクティブ認証にフォールバックする
+    if not token:
+        try:
+            logger.debug("Attempting interactive token acquisition")
+            response = pca.acquire_token_interactive(scopes=target_scopes)
+            if response and "access_token" in response:
+                token = str(response["access_token"])  # type: ignore[assignment]
+                logger.debug("Successfully acquired token interactively")
+            elif response and "error" in response:
+                logger.error(
+                    "Interactive token acquisition failed: %s - %s",
+                    response.get("error"),
+                    response.get("error_description"),
+                )
+        except Exception as ex:
+            logger.error("Interactive token acquisition failed with exception: %s", ex)
+            raise ServiceException(f"Failed to acquire authentication token: {ex}") from ex
+
+    if not token:
+        raise ServiceException("Authentication token cannot be acquired.")
+
+    return token

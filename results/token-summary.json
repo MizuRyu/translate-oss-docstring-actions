@@ -1,0 +1,12 @@
+{
+  "items": 10066,
+  "tokens": 183244,
+  "chars": 992324,
+  "average_tokens": 18.204251937214384,
+  "max_tokens": 1303,
+  "min_tokens": 1,
+  "total_items": 10066,
+  "total_tokens": 183244,
+  "total_chars": 992324,
+  "translation_limit": null
+}

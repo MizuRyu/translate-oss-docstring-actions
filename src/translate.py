@@ -28,6 +28,7 @@ DEFAULT_EXCLUDE_TERMS = (
     "State, Message, Optional, None, Middleware, Executor"
 )
 MAX_OVERSIZED_TOKENS = 50000  # この値を超えるエントリは異常データとして除外
+AZURE_CONCURRENT_BATCHES = 10  # Azure専用モード時の同時バッチ数
 
 PROMPT_TEMPLATE = dedent(
     """\
@@ -78,6 +79,8 @@ async def run(settings: Dict[str, Any]) -> None:
         "system_prompt": settings.get("system_prompt", prompt_text),
         "is_mock": bool(settings.get("is_mock", False)),
         "enable_fallback": bool(settings.get("enable_fallback", True)),
+        "azure_only": bool(settings.get("azure_only", False)),
+        "max_batch_tokens": settings.get("max_batch_tokens", MAX_REQUEST_TOKENS),
     }
 
     entries = _load_entries(cfg["input_path"], cfg["limit"])
@@ -92,6 +95,7 @@ async def run(settings: Dict[str, Any]) -> None:
         cfg["system_prompt"],
         cfg["failed_output"],
         cfg["enable_fallback"],
+        cfg["max_batch_tokens"],
     )
 
     cfg["output_path"].parent.mkdir(parents=True, exist_ok=True)
@@ -106,21 +110,32 @@ async def run(settings: Dict[str, Any]) -> None:
     success_count = 0
     failure_items: List[Dict[str, Any]] = []
 
-    tasks: List[asyncio.Task] = []
-    async with asyncio.TaskGroup() as tg:
-        for index, batch in enumerate(batches, start=1):
-            detail = f"{len(batch)} items"
-            log_progress("Translate", index, len(batches), f"Batch {index}", detail)
-            task = tg.create_task(
-                translate_batch(
-                    cfg["system_prompt"],
-                    batch,
-                    is_mock=cfg["is_mock"],
+    # Azure専用モードの場合は並列数を制限
+    if cfg["azure_only"]:
+        batch_results = await _process_batches_with_concurrency_limit(
+            batches,
+            cfg["system_prompt"],
+            cfg["is_mock"],
+            cfg["azure_only"],
+            AZURE_CONCURRENT_BATCHES,
+        )
+    else:
+        # GitHub Modelsの場合は全バッチ同時実行（モデル側で並列制御）
+        tasks: List[asyncio.Task] = []
+        async with asyncio.TaskGroup() as tg:
+            for index, batch in enumerate(batches, start=1):
+                detail = f"{len(batch)} items"
+                log_progress("Translate", index, len(batches), f"Batch {index}", detail)
+                task = tg.create_task(
+                    translate_batch(
+                        cfg["system_prompt"],
+                        batch,
+                        is_mock=cfg["is_mock"],
+                        azure_only=cfg["azure_only"],
+                    )
                 )
-            )
-            tasks.append(task)
-
-    batch_results = [task.result() for task in tasks]
+                tasks.append(task)
+        batch_results = [task.result() for task in tasks]
     results: List[Optional[List[str]]] = []
     errors: List[Optional[Exception]] = []
     stats = {
@@ -192,6 +207,7 @@ async def run(settings: Dict[str, Any]) -> None:
             cfg["failed_output"],
             cfg["system_prompt"],
             cfg["is_mock"],
+            cfg["azure_only"],
         )
 
     duration = perf_counter() - start
@@ -215,6 +231,54 @@ async def run(settings: Dict[str, Any]) -> None:
     })
 
 
+async def _process_batches_with_concurrency_limit(
+    batches: List[List[Dict[str, Any]]],
+    system_prompt: str,
+    is_mock: bool,
+    azure_only: bool,
+    concurrent_limit: int,
+) -> List[Tuple[Optional[List[str]], Optional[Exception], Dict[str, int]]]:
+    """バッチを並列数制限付きで処理する
+    
+    Args:
+        batches: 処理対象のバッチリスト
+        system_prompt: システムプロンプト
+        is_mock: モックモード
+        azure_only: Azure専用モード
+        concurrent_limit: 同時実行数の上限
+    
+    Returns:
+        各バッチの処理結果リスト
+    """
+    results: List[Tuple[Optional[List[str]], Optional[Exception], Dict[str, int]]] = []
+    
+    # バッチを concurrent_limit ごとに分割して処理
+    for chunk_start in range(0, len(batches), concurrent_limit):
+        chunk_end = min(chunk_start + concurrent_limit, len(batches))
+        chunk_batches = batches[chunk_start:chunk_end]
+        
+        tasks: List[asyncio.Task] = []
+        async with asyncio.TaskGroup() as tg:
+            for index, batch in enumerate(chunk_batches, start=chunk_start + 1):
+                detail = f"{len(batch)} items"
+                log_progress("Translate", index, len(batches), f"Batch {index}", detail)
+                task = tg.create_task(
+                    translate_batch(
+                        system_prompt,
+                        batch,
+                        is_mock=is_mock,
+                        azure_only=azure_only,
+                    )
+                )
+                tasks.append(task)
+        
+        # このチャンクの結果を収集
+        chunk_results = [task.result() for task in tasks]
+        results.extend(chunk_results)
+    
+    return results
+
+
 def _load_entries(path: Path, limit: Optional[int]) -> List[Dict[str, Any]]:
     """入力JSONLを読み込む"""
 
@@ -233,6 +297,7 @@ async def _process_oversized_entries(
     failed_output: Path,
     system_prompt: str,
     is_mock: bool,
+    azure_only: bool,
 ) -> int:
     """
     トークン超過エントリをFallbackで処理する
@@ -246,6 +311,7 @@ async def _process_oversized_entries(
         failed_output: 失敗した翻訳の出力先
         system_prompt: システムプロンプト
         is_mock: モックモード（常にFalse想定）
+        azure_only: Azure AI Inferenceのみを使用
     
     Returns:
         成功した件数
@@ -281,6 +347,7 @@ async def _process_oversized_entries(
                 system_prompt,
                 [entry],
                 is_mock=is_mock,
+                azure_only=azure_only,
             )
             translations, error, _ = batch_result
             

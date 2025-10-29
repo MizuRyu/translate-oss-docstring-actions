@@ -60,6 +60,12 @@ def create_parser() -> argparse.ArgumentParser:
         default=False,
         help="トークン超過エントリのFallback処理を無効化（スキップのみ）",
     )
+    translate.add_argument(
+        "--azure-only",
+        action="store_true",
+        default=False,
+        help="GitHub ModelsをスキップしてAzure AI Inferenceのみを使用",
+    )
     translate.add_argument("--log-level", default="INFO")
 
     # replace
@@ -105,6 +111,7 @@ def parse_args(argv: Optional[Sequence[str]]) -> Dict[str, Any]:
                 "exclude_terms": args.exclude_terms,
                 "is_mock": args.is_mock,
                 "enable_fallback": not args.no_fallback,
+                "azure_only": args.azure_only,
                 "log_level": args.log_level,
             },
         }

@@ -25,6 +25,7 @@ TEMPERATURE = 0.2
 TOP_P = 1.0
 PRIMARY_TIMEOUT_SECONDS = 100.0
 FALLBACK_TIMEOUT_SECONDS = 100.0
+AZURE_TPM_LIMIT = 100000  # Azure OpenAI: 1分あたり10万トークン
 
 
 class TranslationEntry(BaseModel):
@@ -132,7 +133,7 @@ def _get_concurrency_limiter(
         _CONCURRENCY_LIMITERS[key] = limiter
     return limiter
 
-class RequestRateLimiter:
+class GHModelsRateLimiter:
     """GitHubエンドポイント向けの単純なレートリミッタ。"""
 
     def __init__(self, per_minute: Optional[int], per_day: Optional[int]) -> None:
@@ -168,70 +169,157 @@ class RequestRateLimiter:
                 await asyncio.sleep(sleep_for)
 
 
+class AOAIRateLimiter:
+    """Azure OpenAI向けのトークンベースレートリミッタ（TPM制限対応）"""
+
+    def __init__(self, tokens_per_minute: int) -> None:
+        self.tokens_per_minute = tokens_per_minute
+        self.token_events: deque[Tuple[float, int]] = deque()  # (timestamp, token_count)
+
+    async def acquire(self, token_count: int) -> None:
+        """指定トークン数を消費可能になるまで待機する
+        
+        Args:
+            token_count: 消費するトークン数
+        """
+        while True:
+            now = time.monotonic()
+            # 1分以上前のイベントを削除
+            while self.token_events and now - self.token_events[0][0] >= 60:
+                self.token_events.popleft()
+            
+            # 現在の1分間のトークン使用量を計算
+            current_tokens = sum(tokens for _, tokens in self.token_events)
+            
+            # トークン数が制限内なら許可
+            if current_tokens + token_count <= self.tokens_per_minute:
+                self.token_events.append((now, token_count))
+                logger.debug(
+                    "Azure TPM: acquired %d tokens (current: %d/%d)",
+                    token_count,
+                    current_tokens + token_count,
+                    self.tokens_per_minute,
+                )
+                return
+            
+            # 制限を超える場合は待機
+            if self.token_events:
+                oldest_timestamp = self.token_events[0][0]
+                sleep_for = 60 - (now - oldest_timestamp) + 0.1  # 少し余裕を持たせる
+            else:
+                sleep_for = 1.0
+            
+            logger.warning(
+                "Azure TPM limit reached: waiting %.1fs (current: %d, needed: %d, limit: %d)",
+                sleep_for,
+                current_tokens,
+                token_count,
+                self.tokens_per_minute,
+            )
+            await asyncio.sleep(sleep_for)
+
+
+_azure_token_limiter: Optional[AOAIRateLimiter] = None
+
+
+def _get_azure_token_limiter() -> AOAIRateLimiter:
+    """Azure OpenAI用のトークンレートリミッタを取得する（シングルトン）"""
+    global _azure_token_limiter
+    if _azure_token_limiter is None:
+        _azure_token_limiter = AOAIRateLimiter(AZURE_TPM_LIMIT)
+    return _azure_token_limiter
+
+
 async def translate_batch(
     system_prompt: str,
     entries: Sequence[Dict[str, Any]],
     *,
     is_mock: bool = False,
+    azure_only: bool = False,
 ) -> Tuple[Optional[List[str]], Optional[Exception], Dict[str, int]]:
-    """翻訳を1バッチ分実行し、結果と統計値を返す"""
+    """翻訳を1バッチ分実行し、結果と統計値を返す
+    
+    Args:
+        system_prompt: システムプロンプト
+        entries: 翻訳対象エントリのリスト
+        is_mock: モックモード（LLMを呼ばずダミー翻訳を返す）
+        azure_only: Azure AI Inferenceのみを使用（GitHub Modelsをスキップ）
+    
+    Returns:
+        (翻訳結果リスト, エラー, 統計情報)
+    """
 
     stats = _init_stats()
 
     texts = [entry["text"] for entry in entries]
 
-    logger.debug("translate_batch entries=%d is_mock=%s", len(texts), is_mock)
+    logger.debug("translate_batch entries=%d is_mock=%s azure_only=%s", len(texts), is_mock, azure_only)
 
     if is_mock:
         translations = await _mock_request(system_prompt, texts)
         return translations, None, stats
 
-    primary_client = get_github_client()
+    # Azure onlyモードの場合、GitHub Modelsをスキップ
+    if not azure_only:
+        primary_client = get_github_client()
 
-    for model_name in GITHUB_MODEL_SEQUENCE:
-        policy = _get_github_model_policy(model_name)
-        concurrency_limiter = _get_concurrency_limiter(model_name, policy.concurrency)
-        if concurrency_limiter is None:
-            raise TranslationRequestError(
-                f"GitHubモデルの同時実行数が未設定です model={model_name}"
-            )
-
-        request_limiter = RequestRateLimiter(policy.rpm, policy.rpd)
-        primary_params = _get_model_config(model_name)
-
-        try:
-            async with concurrency_limiter.slot():
-                await request_limiter.acquire()
-                translations = await asyncio.wait_for(
-                    _invoke_client(primary_client, primary_params, system_prompt, texts),
-                    timeout=PRIMARY_TIMEOUT_SECONDS,
+        for model_name in GITHUB_MODEL_SEQUENCE:
+            policy = _get_github_model_policy(model_name)
+            concurrency_limiter = _get_concurrency_limiter(model_name, policy.concurrency)
+            if concurrency_limiter is None:
+                raise TranslationRequestError(
+                    f"GitHubモデルの同時実行数が未設定です model={model_name}"
                 )
-            stats["primary_requests"] += 1
-            logger.debug("GitHub model used model=%s", model_name)
-            return translations, None, stats
-        except asyncio.TimeoutError:
-            logger.warning(
-                "GitHub model timed out model=%s limit=%.1f entries=%d",
-                model_name,
-                PRIMARY_TIMEOUT_SECONDS,
-                len(texts),
-            )
-            stats["timeouts"] += 1
-            continue
-        except DailyLimitError:
-            logger.info("GitHub model daily limit reached model=%s", model_name)
-            stats["rate_limit_hits"] += 1
-            continue
-        except RateLimitError as rate_error:
-            logger.debug("GitHub rate limit model=%s error=%s", model_name, rate_error)
-            stats["rate_limit_hits"] += 1
-            continue
-        except (TranslationRequestError, TranslationParseError) as primary_error:
-            logger.debug("GitHub request failed model=%s error=%s", model_name, primary_error)
-            break
 
+            request_limiter = GHModelsRateLimiter(policy.rpm, policy.rpd)
+            primary_params = _get_model_config(model_name)
+
+            try:
+                async with concurrency_limiter.slot():
+                    await request_limiter.acquire()
+                    translations = await asyncio.wait_for(
+                        _invoke_client(primary_client, primary_params, system_prompt, texts),
+                        timeout=PRIMARY_TIMEOUT_SECONDS,
+                    )
+                stats["primary_requests"] += 1
+                logger.debug("GitHub model used model=%s", model_name)
+                return translations, None, stats
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "GitHub model timed out model=%s limit=%.1f entries=%d",
+                    model_name,
+                    PRIMARY_TIMEOUT_SECONDS,
+                    len(texts),
+                )
+                stats["timeouts"] += 1
+                continue
+            except DailyLimitError:
+                logger.info("GitHub model daily limit reached model=%s", model_name)
+                stats["rate_limit_hits"] += 1
+                continue
+            except RateLimitError as rate_error:
+                logger.debug("GitHub rate limit model=%s error=%s", model_name, rate_error)
+                stats["rate_limit_hits"] += 1
+                continue
+            except (TranslationRequestError, TranslationParseError) as primary_error:
+                logger.debug("GitHub request failed model=%s error=%s", model_name, primary_error)
+                break
+    else:
+        logger.info("Azure-only mode: skipping GitHub Models")
+
+    # Azure AI Inference (fallback)
     fallback_client = get_azure_client()
     fallback_params = _get_model_config(os.getenv("AZURE_INFERENCE_MODEL", "gpt-4.1-mini"))
+
+    # Azure TPM制限を適用
+    token_limiter = _get_azure_token_limiter()
+    # システムプロンプト + ユーザーメッセージのトークン数を概算
+    total_text = system_prompt + "\n".join(texts)
+    estimated_tokens = count_tokens(total_text)
+    # 出力トークンも考慮（入力の50%程度と仮定）
+    estimated_total_tokens = int(estimated_tokens * 1.5)
+    
+    await token_limiter.acquire(estimated_total_tokens)
 
     try:
         translations = await asyncio.wait_for(
